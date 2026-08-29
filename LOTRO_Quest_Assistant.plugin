@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<Plugin>
+	<Information>
+		<Name>LOTRO Quest Assistant</Name>
+		<Author>Antigravity</Author>
+		<Version>0.3-Fase2-StateEngine</Version>
+		<Description>Fase 2 - Motor de Estado y Quest Tracker</Description>
+	</Information>
+	<Package>LOTRO_Quest_Assistant.Main</Package>
+</Plugin>
