@@ -26,6 +26,12 @@ import "LOTRO_Quest_Assistant.Data.QuestDatabase_007"
 import "LOTRO_Quest_Assistant.Data.QuestDatabase_008"
 import "LOTRO_Quest_Assistant.Data.QuestDatabase_009"
 import "LOTRO_Quest_Assistant.Data.QuestDatabase_010"
+-- QuestDatabase_011_Missing.lua (2026-09-06): 150 misiones que existen en
+-- LotRO Companion pero nunca estuvieron en Compendium (y por lo tanto
+-- tampoco en los bloques 001-010 de arriba) -- ver la nota grande en ese
+-- archivo para el detalle completo. ndx nuevos (14825+), nunca pisan nada
+-- de los bloques existentes.
+import "LOTRO_Quest_Assistant.Data.QuestDatabase_011_Missing"
 
 if LQA.Debug.Enabled then
     Turbine.Shell.WriteLine("<rgb=#FF8800>QuestDatabase END</rgb>")

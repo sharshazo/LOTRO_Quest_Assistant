@@ -22,6 +22,24 @@ import "LOTRO_Quest_Assistant.Data.QuestNameIndex"
 import "LOTRO_Quest_Assistant.Data.QuestNameESIndex_Full"
 import "LOTRO_Quest_Assistant.Data.QuestObjectiveESIndex_Full"
 import "LOTRO_Quest_Assistant.Data.QuestLocalization_Full"
+-- QuestObjectiveES_Generated.lua (2026-09-06): traduccion automatica (Argos
+-- Translate, motor offline/gratuito -- ver ese archivo para la nota completa)
+-- SOLO para las 2.959 misiones cuyo objectivesES en QuestLocalization_Full
+-- seguia en ingles puro (verificado por deteccion de palabras funcionales
+-- reales del espanol, no solo tildes -- muchos nombres propios en ingles
+-- como "Nágri" ya llevan acento y daban falso positivo con esa deteccion
+-- mas simple). Las otras 11.865 misiones ya tenian objectivesES profesional
+-- real, encontrado recien esta sesion (nota vieja de memoria/documentacion
+-- decia "solo Lv1-10", desactualizada). No es traduccion oficial -- ver el
+-- merge junto a QuestLocES mas abajo.
+import "LOTRO_Quest_Assistant.Data.QuestObjectiveES_Generated"
+-- QuestNameES_Missing.lua (2026-09-06): nombres profesionales en espanol
+-- (misma fuente LotRO Companion labels/es/quests.xml de siempre) para las
+-- 150 misiones nuevas de QuestDatabase_011_Missing.lua (ver esa nota
+-- grande) -- esas 150 no existen en QuestLocalization_Full.lua en
+-- absoluto (nunca estuvieron en Compendium), asi que necesitan su propia
+-- entrada nueva en QuestLocES en vez de solo pisar un campo existente.
+import "LOTRO_Quest_Assistant.Data.QuestNameES_Missing"
 import "LOTRO_Quest_Assistant.Data.QuestLocCoords"
 import "LOTRO_Quest_Assistant.Data.QuestStagesCoords"
 import "LOTRO_Quest_Assistant.Data.ZoneMapIndex"
@@ -61,6 +79,30 @@ import "LOTRO_Quest_Assistant.Data.MoorMapZonesES"
 _G.QuestNameESIndex = _G.QuestNameESIndex_Full
 _G.QuestObjectiveESIndex = _G.QuestObjectiveESIndex_Full
 _G.QuestLocES = _G.QuestLocalization_Full
+
+-- Relleno de QuestObjectiveES_Generated (ver import e nota grande arriba):
+-- solo pisa objectivesES para las ndx que ese archivo trae (exactamente las
+-- 2.959 que no tenian nada real en espanol) -- nunca toca las que ya
+-- resolvian con la fuente profesional de QuestLocalization_Full.
+if _G.QuestObjectiveES_Generated then
+    for ndx, data in pairs(_G.QuestObjectiveES_Generated) do
+        if _G.QuestLocES[ndx] then
+            _G.QuestLocES[ndx].objectivesES = data.objectivesES
+        end
+    end
+end
+
+-- Relleno de QuestNameES_Missing (ver import e nota grande arriba): las 150
+-- misiones de QuestDatabase_011_Missing.lua no tienen NINGUNA entrada en
+-- QuestLocalization_Full (nunca estuvieron en Compendium), asi que se les
+-- crea su propia entrada nueva en QuestLocES en vez de pisar un campo de
+-- una que ya existia.
+if _G.QuestNameES_Missing then
+    for ndx, data in pairs(_G.QuestNameES_Missing) do
+        _G.QuestLocES[ndx] = _G.QuestLocES[ndx] or {}
+        _G.QuestLocES[ndx].nameES = data.nameES
+    end
+end
 
 -- 3. Load Core Managers
 import "LOTRO_Quest_Assistant.Core.QuestLocResolver"
