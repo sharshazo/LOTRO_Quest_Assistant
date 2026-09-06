@@ -148,11 +148,19 @@ end
 -- linea (de objectivesES O de las etapas) que sea un duplicado EXACTO
 -- del titulo ya puesto en parts[1] -- mismo criterio de comparacion que
 -- ya usa IsFlavorText, aplicado sin heredar el resto de sus reglas.
-function NarratorBridge.PlayQuestText(ndx, quest, esName)
-	if not quest then return end
-
-	local title = esName or quest.nameEN or ""
-	local parts = { title }
+-- Compartido por PlayQuestText (mision activa) y AnnounceCompleted (mision
+-- completada, ver mas abajo) -- extraido 2026-09-06 tras bug reportado por
+-- el usuario ("el boton narrar del questbook solo narra el titulo, el texto
+-- de abajo no"): AnnounceCompleted armaba su propio texto de 1 sola linea
+-- ("Mision completada: <titulo>") sin pasar nunca por objectivesES/
+-- QuestStagesCoords, a diferencia de PlayQuestText -- por eso narrar una
+-- mision recien completada desde el libro (QuestBookWindow.lua, que abre
+-- automaticamente en QUEST_JUST_COMPLETED) sonaba como "solo el titulo".
+-- Se factoriza aca la recoleccion de objetivos/etapas para que ambas rutas
+-- narren el mismo contenido real, mismo criterio que ya se aplico antes con
+-- MoorMapAdapter.ResolveMapID/ResolveQuestLoc (logica duplicada = bugs).
+local function CollectQuestNarrationParts(ndx, quest, title)
+	local parts = {}
 	local function isDuplicateTitle(s)
 		return s == title or s == quest.nameEN
 	end
@@ -185,6 +193,18 @@ function NarratorBridge.PlayQuestText(ndx, quest, esName)
 				table.insert(parts, stageText)
 			end
 		end
+	end
+
+	return parts
+end
+
+function NarratorBridge.PlayQuestText(ndx, quest, esName)
+	if not quest then return end
+
+	local title = esName or quest.nameEN or ""
+	local parts = { title }
+	for _, p in ipairs(CollectQuestNarrationParts(ndx, quest, title)) do
+		table.insert(parts, p)
 	end
 
 	QueueRequest(title, table.concat(parts, ". "), quest.bestower)
@@ -244,7 +264,14 @@ function NarratorBridge.AnnounceCompleted(ndx)
 	local quest, esName = ResolveNameAndQuest(ndx)
 	if not quest then return end
 	NarratorBridge._lastProgress[ndx] = nil
-	QueueRequest(esName, "Mision completada: " .. esName, quest.bestower)
+
+	local opening = "Mision completada: " .. esName
+	local parts = { opening }
+	for _, p in ipairs(CollectQuestNarrationParts(ndx, quest, esName)) do
+		table.insert(parts, p)
+	end
+
+	QueueRequest(esName, table.concat(parts, ". "), quest.bestower)
 end
 
 -- Suscripciones automaticas RETIRADAS (pedido explicito del usuario,
