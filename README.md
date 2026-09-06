@@ -42,18 +42,16 @@ Con esto ya tenés el tracker, el mapa y la traducción funcionando.
 
 ### Narración por voz (opcional)
 
-Los botones de narrar/silenciar necesitan una segunda pieza corriendo
+Los botones de narrar/silenciar necesitan una pieza aparte corriendo
 en tu PC (LOTRO no permite reproducir audio desde un addon) — es
 gratis, un solo instalador de un click:
 
-- [**LOTRO_Chat_Narrator**](https://github.com/sharshazo/LOTRO_Chat_Narrator) —
-  addon complementario que envía el chat relevante al narrador.
 - [**Narrador_IA**](https://github.com/sharshazo/Narrador_IA) — la app
   que sintetiza y reproduce la voz (`Instalar.bat`, sin conocimientos
   de programación).
 
-Sin estas dos piezas, QuestSync funciona igual — solo no vas a
-escuchar la narración.
+Sin esa pieza, QuestSync funciona igual — solo no vas a escuchar la
+narración.
 
 ## Créditos
 
