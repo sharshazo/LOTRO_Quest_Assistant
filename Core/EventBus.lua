@@ -12,6 +12,19 @@ LQA.Debug = LQA.Debug or {}
 -- lineas de color por cada mensaje de chat / cambio de estado son utiles
 -- para diagnosticar pero son ruido puro en una sesion de juego normal.
 -- Cambiar a true solo cuando se este investigando un problema.
+--
+-- Prendido temporalmente 2026-09-04 para diagnosticar "el libro no se abre
+-- al aceptar mision"/"quedan misiones completadas en el Tracker" -- el
+-- libro se confirmo funcionando de nuevo, pedido explicito del usuario de
+-- sacar el ruido de chat. Vuelto a false.
+--
+-- Prendido DE NUEVO 2026-09-05: mismo sintoma reportado otra vez. El log
+-- confirmo que NO era un bug de codigo -- la mision de prueba ya estaba
+-- marcada activa en el estado GUARDADO del addon (residuo de pruebas
+-- anteriores de esta misma sesion), asi que SetQuestActive era un no-op
+-- legitimo (nunca publica QUEST_JUST_ACCEPTED para una mision que el
+-- addon ya cree activa). Confirmado con Desmarcar+Activar manual: el
+-- libro se abrio bien. Vuelto a false otra vez.
 LQA.Debug.Enabled = false
 
 LQA.Core.EventBus = {

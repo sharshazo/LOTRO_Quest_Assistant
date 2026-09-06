@@ -92,6 +92,9 @@ function ChestsWindow:Constructor()
     self:SetSize(700, 680)
     self:SetText("QuestSync - Puntos de Interes")
 
+    -- SFX de "abrir ventana" RETIRADO (pedido explicito del usuario,
+    -- 2026-09-03) -- ver la nota grande en NarratorBridge.lua.
+
     -- ===== Barra de pestañas (misma estructura que la imagen de referencia) =====
     self.tabButtons = {}
     local tabX = 20
@@ -229,6 +232,8 @@ function ChestsWindow:Constructor()
 end
 
 function ChestsWindow:SelectTab(key)
+    -- SFX de "cambio de pestaña" RETIRADO (pedido explicito del usuario,
+    -- 2026-09-03) -- ver la nota grande en NarratorBridge.lua.
     self.activeTab = key
     for k, btn in pairs(self.tabButtons) do
         btn:SetEnabled(k ~= key)

@@ -18,7 +18,7 @@ LOTRO no permite que un addon ejecute comandos de chat por código directamente.
 
 ```
 LOTRO_Quest_Assistant/
-├── LOTRO_Quest_Assistant.plugin / QuestSync.plugin   # 2 manifiestos, mismo Package (ver §10)
+├── QuestSync.plugin                  # manifest (unico -- ver §10, duplicado borrado 2026-09-05)
 ├── Main.lua                          # orquestador: orden de carga, /questsync, /cofres, chat hook compartido
 ├── ESTRUCTURA_DEL_CODIGO.md          # este archivo
 ├── Core/
@@ -237,7 +237,7 @@ Ventana flotante (patrón portado de `DeedTracker/DeedTooltipWindow.lua`). Muest
 
 ## 10. Notas y advertencias estructurales
 
-- **Dos archivos `.plugin`** (`LOTRO_Quest_Assistant.plugin`/`QuestSync.plugin`) apuntan al mismo `Package`. Sin evidencia de doble carga en +40 sesiones, pero si algún día aparecen síntomas de "todo se duplica", este es el primer sospechoso.
+- **Resuelto 2026-09-05**: había dos archivos `.plugin` (`LOTRO_Quest_Assistant.plugin`/`QuestSync.plugin`) apuntando al mismo `Package` — riesgo de doble carga si el usuario tildaba los dos en el gestor de addons. Se borró `LOTRO_Quest_Assistant.plugin` (dev y desplegado), queda `QuestSync.plugin` como único manifest.
 - Lua no garantiza el orden de `pairs()` — cualquier lista que dependa de orden estable debe ordenarse explícitamente por `ndx` (ya hecho en `PopulateList`).
 - Los archivos de `Data/` con texto en español están en UTF-8 literal (sin escapes `\DDD`) — mantener esa convención al generar datos nuevos.
 - **Nunca usar PowerShell `Set-Content`/`Out-File -Encoding utf8` sobre archivos `.lua`** — agrega BOM y rompe el parser de Lua. Usar herramientas de edición directa (Read/Edit) o Python con `encoding='utf-8'` explícito sin BOM.

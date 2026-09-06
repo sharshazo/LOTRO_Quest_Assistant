@@ -73,16 +73,85 @@ LQA.UI.QuestTrackerHUD = class(Turbine.UI.Lotro.Window)
 -- extra).
 local ROW_HEIGHT = 64
 
--- Piezas del pergamino en 3 partes (ver nota V3 grande arriba) -- tamaños
--- FIJOS de los archivos reales, usados tanto para el layout inicial como
--- para SizeChanged.
-local PAGE_TOP_H = 130
-local PAGE_BOTTOM_H = 88
--- Alto nativo real de tracker_parchment_mid.tga (300x112, confirmado con
--- Pillow). SetBackground() nunca estira una imagen -- si el control mide
--- MAS que esto, Turbine repite/tilea la imagen en mosaico. V9 (mas abajo)
--- usa esto para redondear el alto de pageMid a un multiplo exacto.
-local MID_TILE_H = 112
+-- V12 (2026-09-03, pedido explicito del usuario tras probar preview.png en
+-- el juego: "las letras sobresalen la imagen, incluso los botones de
+-- narrar no se encuentran dentro del papel"). Medido con Pillow sobre
+-- preview.png real (no adivinado): el pergamino CLARO (donde hay que
+-- dibujar contenido) ocupa x=41..274 en las filas de arriba, pero se
+-- ANGOSTA hacia abajo (arco de la hoja) -- a y=370 (ya cerca del ultimo
+-- renglon visible en la captura) el pergamino real es solo x=69..241. El
+-- layout viejo (heredado de la imagen anterior, mas ancha de pergamino)
+-- arrancaba el contenido en x=10 (item de la lista, ver listContainer mas
+-- abajo) -- 31px DENTRO del marco de madera para CUALQUIER fila, no solo
+-- las de abajo. Se acota todo el contenido de fila (insignia/texto/
+-- botones) a una franja seguro-adentro con margen real, ademas angosta
+-- para no repetir el problema en las filas que caen en la zona angosta.
+-- V18 (2026-09-05, pedido explicito del usuario: "el contenedor de la
+-- ventana sigue teniendo el tamaño/margenes viejos... deja espacio
+-- muerto"). El pergamino final (V17) ya usaba ~95% de su propio canvas
+-- 300x416 (bbox real medido con Pillow: x=4..295, y=5..409) -- pero
+-- PAGE_W/PAGE_H seguian midiendo el CANVAS COMPLETO (300x416), asi que
+-- ese ~5% de margen transparente sobrante quedaba incluido en el tamaño
+-- del contenedor/ventana, mostrandose como hueco real (el chrome nativo
+-- de la ventana es opaco, no transparente, encima de esos pixeles
+-- vacios). Fix: tracker_parchment_cropped.png = tracker_parchment_final_2
+-- RECORTADO a su bbox real (292x405, cero margen transparente sobrante,
+-- confirmado con Pillow tras el recorte). Todas las coordenadas de mas
+-- abajo (SAFE_LEFT/RIGHT, GATHER_BTN_Y, PAGE_BOTTOM_H, anillo) se
+-- restaron el mismo offset del recorte (dx=4, dy=5) para seguir cayendo
+-- en el mismo lugar real. El angosto natural del CUERPO del pergamino
+-- (mas angosto que las puntas del rodillo, x=45..241 de 292 en el cuerpo)
+-- es la forma real del arte -- un pergamino enrollado nunca va a llenar
+-- un rectangulo por completo ahi, no es un margen que se pueda recortar
+-- sin cortar el dibujo.
+local SCALE = 1.05
+local SAFE_LEFT = math.floor(45 * SCALE)   -- x absoluta de ventana/imagen (item arranca en x=10, ver listContainer)
+local SAFE_RIGHT = math.floor(241 * SCALE) -- peor caso real del borde rasgado, con margen
+
+-- BUG CORREGIDO (screenshot del usuario, 2026-09-03: "perdida de texto de
+-- los titulos... recortado" -- un nombre MUY largo, ej. "Libro 5, Capitulo
+-- 1: Hacia las Montañas Nubladas" (49 caracteres), envuelve a 3 lineas a
+-- este ancho/fuente, pero ROW_HEIGHT=64 solo tenia margen calculado para 2
+-- (ver V10 mas abajo) -- la 3ra linea quedaba tapada por el boton Narrar de
+-- esa misma fila. Fila mas alta SOLO para este caso puntual (ver PopulateActive).
+local ROW_HEIGHT_TALL = 88
+
+-- Tamaño real de tracker_parchment.tga -- 315x437 = 300x416 nativo x SCALE
+-- (ver nota grande de SAFE_LEFT/SAFE_RIGHT arriba), tal cual salio de
+-- Pillow (round, no floor -- por eso 437 y no 436). Ya no hay piezas
+-- separadas ni SizeChanged: el tamaño de la ventana quedo fijo, esto es
+-- solo para el layout inicial.
+-- V18: 307x425 = tracker_parchment_cropped.png (292x405 nativo, ver nota
+-- grande de SAFE_LEFT/SAFE_RIGHT) x SCALE, tal cual salio de Pillow.
+local PAGE_H = 425
+local PAGE_W = 307
+-- Grosor del marco de madera de ABAJO dentro de esa misma imagen unica
+-- (ya no es un archivo aparte, pero la lista sigue necesitando dejarle
+-- espacio para no taparlo).
+--
+-- V18: el papel plano (zona de lista real) llegaba a y=320 en la imagen
+-- SIN recortar -- en la recortada (offset dy=5) eso es y=315. Con el
+-- nuevo alto nativo (405): 405-315=90, x SCALE.
+local PAGE_BOTTOM_H = math.floor(90 * SCALE)
+
+-- BUG CORREGIDO (2026-09-03, mismo dia: "el traker sigue teniendo error
+-- visual" incluso despues de volver a la imagen unica) -- el offset de
+-- "aire arriba para el chrome nativo" que este archivo venia usando desde
+-- la V2/V3 original era 30, heredado sin cuestionar. Comparado contra las
+-- OTRAS 2 ventanas de este addon que SI usan Turbine.UI.Lotro.Window con
+-- fondo de imagen unica y no tienen bugs reportados de recorte
+-- (QuestBookWindow.lua's CHROME_TOP=40, GatherWindow.lua's
+-- CONTENT_TOP=40) -- las dos coinciden en 40, no 30. Con 30 le faltaban
+-- 10px reales de chrome nativo, asi que el borde inferior del pergamino
+-- quedaba recortado contra el borde real de la ventana (se veia el fondo
+-- nativo oscuro/transparente ahi) -- la MISMA clase de "corte" que el
+-- propio historial de este archivo ya habia sospechado (V9/BUG#10: "si el
+-- chrome nativo... reserva algo de alto que este calculo no
+-- contemplaba") pero nunca habia llegado a medir contra un valor
+-- confirmado en otra ventana. La imagen (tracker_parchment.tga, 300x416)
+-- esta bien tal cual esta -- no hacia falta cambiarle el tamaño, hacia
+-- falta corregir CUANTO aire se le deja arriba.
+local CHROME_TOP = 40
 
 -- V8 -- pedido explicito del usuario ("el boton de recoleccion puede
 -- estar mas arriba, hay mucho espacio perdido"): el adorno de esquina de
@@ -92,7 +161,10 @@ local MID_TILE_H = 112
 -- posicionaba a 30+130+8=168 (asumiendo que hacia falta esperar a que
 -- terminara TODO pageTop) dejando ~50px de pergamino en blanco sin usar
 -- arriba del boton.
-local GATHER_BTN_Y = 30 + 88
+-- V17: rodillo termina en y=45 nativo, papel limpio desde y=50-55 -- 75
+-- nativo (10px de aire real debajo del rodillo).
+-- V18: mismo punto real, offset por el recorte (dy=5): 75-5=70 nativo.
+local GATHER_BTN_Y = CHROME_TOP + math.floor(70 * SCALE)
 
 -- Interruptor de idioma (LanguageSettings.lua): mismo patron que
 -- QuestSyncWindow.lua, version reducida ya que este HUD solo tiene 3
@@ -155,12 +227,42 @@ end
 function LQA.UI.QuestTrackerHUD:Constructor()
     Turbine.UI.Lotro.Window.Constructor(self)
 
-    self:SetPosition(Turbine.UI.Display.GetWidth() - 320, 200)
-    -- Alto por defecto: 500 -- con ROW_HEIGHT=64 (subido de 48, V3) entran
-    -- ~3 filas completas a la vista antes de necesitar scroll (pedido
-    -- explicito del usuario), mas el cartel/boton/adornos de arriba y
-    -- abajo.
-    self:SetSize(300, 500)
+    -- 320 = PAGE_W(300) + 20 de margen contra el borde de pantalla -- con
+    -- PAGE_W ahora en 450 (ver nota grande de SAFE_LEFT/SAFE_RIGHT), esto
+    -- se queda igual (PAGE_W+20) o la ventana quedaria de mas a la derecha
+    -- fuera de pantalla.
+    --
+    -- Y subido de 200 a 110 (2026-09-05, pedido explicito del usuario:
+    -- "hay espacio y ruido visual arriba, se puede aprovechar mas el
+    -- area"). Verificado con captura real (ScreenShot_2026-09-05_045425):
+    -- con Y=200 quedaban ~110px de mundo 3D vacio entre el HUD superior
+    -- del juego (icono de dificultad/contadores, que termina ~y=58 en
+    -- pantalla) y el titulo de esta ventana -- puro espacio perdido. 110
+    -- deja un colchon real debajo de ese HUD (no pegado) sin invadirlo.
+    self:SetPosition(Turbine.UI.Display.GetWidth() - (PAGE_W + 20), 110)
+    -- REVERTIDO A ESTRUCTURA ORIGINAL (pedido explicito del usuario,
+    -- 2026-09-03: "vuelve a la estructura original y retoca la version
+    -- pasada"). El sistema de pergamino en 3 piezas (V3-V10, historial
+    -- grande abajo) siguio generando bugs de costura/transparencia sesion
+    -- tras sesion, y el ultimo recorte de tracker_parchment_top/mid/
+    -- bottom.tga (intentando arreglar el bug #10) quedo realmente
+    -- CORRUPTO: comparado a mano contra tracker_parchment.tga (la imagen
+    -- unica original, intacta, sin tocar desde su creacion el 2026-08-28),
+    -- la pieza _bottom.tga tenia tajos blancos irregulares cruzando el
+    -- marco de madera que NO existen en el original -- eso es exactamente
+    -- lo que se vio en el juego (fondo con "error", cortes visibles, marco
+    -- con partes transparentes). Se vuelve a la unica imagen original tal
+    -- cual estaba en la V2, en vez de seguir parchando el sistema de 3
+    -- piezas.
+    --
+    -- Con una sola imagen (no separable en piezas fijas+elastica sin
+    -- volver a romperla) la ventana deja de ser libremente
+    -- redimensionable -- se fija al tamaño nativo real del arte (300x416)
+    -- + CHROME_TOP (40px, ver nota grande de esa constante mas arriba) de
+    -- aire arriba para el chrome nativo + el cartel. Es un paso atras
+    -- deliberado en adaptabilidad a cambio de no volver a mostrar el
+    -- pergamino roto/costurado/recortado -- pedido explicito del usuario.
+    self:SetSize(PAGE_W, CHROME_TOP + PAGE_H)
     -- BUG CORREGIDO (visto en captura con zoom del usuario: el titulo
     -- nativo se cortaba, "QuestSync Tracke" sin la "r" final) -- el chrome
     -- nativo de Lotro.Window trunca el titulo si no entra en el ancho de
@@ -169,30 +271,13 @@ function LQA.UI.QuestTrackerHUD:Constructor()
     self:SetText("Tracker")
     self:SetOpacity(0.9)
     self:SetVisible(true)
-    -- Adaptable: mismo mecanismo confirmado en QuestSyncWindow.lua/MoorMap
-    -- (SetResizable + SetMinimumSize + SizeChanged son APIs reales).
-    self:SetResizable(true)
-    -- Minimo: 290 (V3) -> 370 (V6). Con el redondeo de listH a multiplos
-    -- de ROW_HEIGHT (ver SizeChanged mas abajo), 290 ya no alcanzaba para
-    -- mostrar ni una fila completa sin que se superpusiera con el adorno
-    -- de abajo (88 + 10 + 200(listTop) + 64(1 fila) = 362 es el piso real
-    -- -- 370 deja un pequeño margen).
-    self:SetMinimumSize(220, 370)
-    -- V5 -- BUG CORREGIDO (screenshot del usuario: al ENSANCHAR la ventana
-    -- se veia el pergamino repetido en mosaico varias veces de lado a
-    -- lado) -- el sistema de 9-slice de la V3 solo resuelve el ALTO
-    -- (pageTop/pageMid/pageBottom se acomodan bien verticalmente a
-    -- cualquier alto), pero pageMid seguia usando el ANCHO completo de la
-    -- ventana (self.pageMid:SetSize(w, ...) en SizeChanged, ver mas abajo)
-    -- -- al ensanchar mas alla de 300 esa pieza (nativamente de 300px)
-    -- tambien se repetia en mosaico, esta vez de lado a lado. Pedido
-    -- explicito del usuario ("deja el limite que no se pueda ampliar pero
-    -- si que se pueda achicar"): en vez de armar un 9-slice horizontal
-    -- tambien (mucho mas complicado por los adornos redondeados de las
-    -- esquinas), se le pone techo a AMBAS dimensiones al tamaño por
-    -- defecto -- se puede seguir achicando libre hasta el minimo de
-    -- arriba, pero no agrandar mas alla de 300x500.
-    self:SetMaximumSize(300, 500)
+    -- Ya NO redimensionable (ver nota grande arriba) -- la imagen unica no
+    -- se puede partir en piezas fijas+elastica sin repetir el bug que se
+    -- esta revirtiendo.
+    self:SetResizable(false)
+
+    -- SFX de "abrir ventana" RETIRADO (pedido explicito del usuario,
+    -- 2026-09-03) -- ver la nota grande en NarratorBridge.lua.
 
     -- currentZone: cambiamos de area a zone para el HUD. A diferencia de la
     -- ventana principal (que lista TODAS las misiones del juego y necesita
@@ -202,137 +287,210 @@ function LQA.UI.QuestTrackerHUD:Constructor()
     -- saltara entre ellas. Filtrar por 'zone' las mantiene todas juntas.
     self.currentZone = nil
 
-    -- Pergamino en 3 piezas (V3, ver nota grande arriba) -- HIJOS de la
-    -- ventana (nunca la ventana en si, mismo criterio que
-    -- QuestBookWindow.lua).
+    -- Pergamino: UNA sola imagen (estructura original V2, restaurada -- ver
+    -- nota grande en el Constructor sobre por que se abandonan las 3
+    -- piezas). Hijo de la ventana, nunca la ventana en si (mismo criterio
+    -- que QuestBookWindow.lua).
+    --
+    -- V11 (2026-09-03, pedido explicito del usuario: reemplazar la imagen
+    -- por otra nueva porque "el traker sigue teniendo error visual").
+    -- Confirmado el bug real analizando el canal alpha con Pillow: la
+    -- tracker_parchment.tga vieja (intacta desde el 2026-08-28) tenia el
+    -- BORDE IZQUIERDO irregular/dentado (mascara alpha con muescas, no un
+    -- rectangulo redondeado limpio como los otros 3 lados) -- eso es lo que
+    -- se veia como "corte"/mundo 3D asomando en filas contra el borde. La
+    -- imagen nueva (preview.png, provista por el usuario en Documentos/The
+    -- Lord of the Rings Online/, mismas 300x416px) tiene mascara alpha de
+    -- rectangulo redondeado limpio en los 4 lados, sin muescas. Vieja
+    -- respaldada como tracker_parchment.tga.bak_pre_preview (dev y
+    -- deploy). Cartel y esquinas de la nueva imagen miden en pixeles muy
+    -- cerca de la vieja (banda oscura del cartel y=26-67 vs y=26-73
+    -- original) -- CHROME_TOP/PAGE_BOTTOM_H/posicion de lblHeader se
+    -- dejaron sin cambios; revisar en el juego por si hace falta un
+    -- retoque fino.
     local BOOK_RES = LQA.UI.MEMBookStyle.RES_BASE
-    self.pageTop = Turbine.UI.Control()
-    self.pageTop:SetParent(self)
-    self.pageTop:SetPosition(0, 30)
-    self.pageTop:SetSize(300, PAGE_TOP_H)
-    self.pageTop:SetBackground(BOOK_RES .. "tracker_parchment_top.tga")
-    self.pageTop:SetMouseVisible(false)
+    self.pageBg = Turbine.UI.Control()
+    self.pageBg:SetParent(self)
+    self.pageBg:SetPosition(0, CHROME_TOP)
+    self.pageBg:SetSize(PAGE_W, PAGE_H)
+    self.pageBg:SetBackground(BOOK_RES .. "tracker_parchment.tga")
+    self.pageBg:SetMouseVisible(false)
 
-    self.pageMid = Turbine.UI.Control()
-    self.pageMid:SetParent(self)
-    self.pageMid:SetPosition(0, 30 + PAGE_TOP_H)
-    self.pageMid:SetBackground(BOOK_RES .. "tracker_parchment_mid.tga")
-    self.pageMid:SetMouseVisible(false)
-
-    self.pageBottom = Turbine.UI.Control()
-    self.pageBottom:SetParent(self)
-    self.pageBottom:SetSize(300, PAGE_BOTTOM_H)
-    self.pageBottom:SetBackground(BOOK_RES .. "tracker_parchment_bottom.tga")
-    self.pageBottom:SetMouseVisible(false)
-
-    -- lblHeader vive DENTRO del cartel recortado en pageTop (x=[51,266],
-    -- y=[31,72] relativo a pageTop -- ver nota grande arriba). Posicion
-    -- FIJA (pageTop nunca se estira) -- multilinea + centrado porque el
-    -- cartel (215px) es mas angosto que el texto completo en una linea.
-    -- V4: BookAntiquaBold14 -> BookAntiquaBold24 (el mas grande
-    -- disponible en MEMBookStyle) -- con el texto acortado a "Misiones
-    -- activas" ahora entra y llena el cartel en vez de perderse chico en
-    -- el medio.
+    -- lblHeader OCULTO (2026-09-05, pedido explicito del usuario de
+    -- reemplazar la imagen por tracker_parchment_v2): el pergamino nuevo
+    -- ya trae "Misiones Activas" grabado en el cartel del rollo de arriba
+    -- -- mismo patron que "¡Nueva misión!" quemado en questbook.tga
+    -- (QuestBookWindow.lua) -- dibujarlo tambien por codigo se veria
+    -- duplicado/pisado. Se mantiene el objeto (RefreshLanguage/
+    -- LANGUAGE_CHANGED mas abajo le siguen llamando SetText sin problema,
+    -- solo que invisible) en vez de borrar todas sus referencias.
     self.lblHeader = Turbine.UI.Label()
     self.lblHeader:SetParent(self)
-    self.lblHeader:SetPosition(51, 30 + 30)
+    self.lblHeader:SetPosition(51, CHROME_TOP + 30)
     self.lblHeader:SetSize(215, 44)
     self.lblHeader:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold24)
     self.lblHeader:SetMultiline(true)
     self.lblHeader:SetTextAlignment(Turbine.UI.ContentAlignment.MiddleCenter)
-    -- Yellow, igual que los encabezados de QuestSyncWindow.lua y de
-    -- DeedTracker (MainWin.lua) -- antes era un dorado apagado a mano.
-    -- Sin cambios de color en este rediseño (pedido explicito del usuario
-    -- de mantener la paleta de estado) -- solo cambia la fuente/posicion.
     self.lblHeader:SetForeColor(Turbine.UI.Color.Yellow)
     self.lblHeader:SetText(HT("header"))
+    self.lblHeader:SetVisible(false)
+
+    -- Anillo con brillo al pasar el mouse por CUALQUIER parte de la
+    -- ventana. Offset real (142,315) tamaño (151,94) sobre la imagen SIN
+    -- recortar -- V18 le resta el offset del recorte (dx=4,dy=5, ver nota
+    -- grande de SAFE_LEFT/SAFE_RIGHT): (138,310). tracker_ring_hover.tga
+    -- se regenero derivado de tracker_parchment_cropped.png (mascara por
+    -- textura, brillo solo sobre la silueta real del anillo -- sin
+    -- costura, mismo metodo que QuestSyncWindow.lua/QuestBookWindow.lua).
+    -- Posicion/tamaño x SCALE: (138,310)x1.05, tamaño (151,94)x1.05.
+    self.ringGlow = Turbine.UI.Control()
+    self.ringGlow:SetParent(self.pageBg)
+    self.ringGlow:SetPosition(145, 326)
+    self.ringGlow:SetSize(159, 99)
+    self.ringGlow:SetBackground(BOOK_RES .. "tracker_ring_hover.tga")
+    self.ringGlow:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+    self.ringGlow:SetMouseVisible(false)
+    self.ringGlow:SetVisible(false)
+
+    -- Poll de posicion real del mouse (Update), NO MouseEnter/Leave de la
+    -- ventana -- misma razon que las otras 2 ventanas: listBox/botones de
+    -- adentro tienen su propio SetMouseVisible(true) y cortarian el
+    -- Enter/Leave del padre.
+    self.ringHoverPoll = Turbine.UI.Control()
+    self.ringHoverPoll:SetParent(self.pageBg)
+    self.ringHoverPoll:SetVisible(false)
+    self.ringHoverPoll:SetWantsUpdates(true)
+    self.ringHovering = false
+    self.ringHoverPoll.Update = function()
+        local mx, my = self:GetMousePosition()
+        local over = mx >= 0 and mx < PAGE_W and my >= CHROME_TOP and my < (CHROME_TOP + PAGE_H)
+        if over ~= self.ringHovering then
+            self.ringHovering = over
+            self.ringGlow:SetVisible(over)
+        end
+    end
 
     -- Boton a GatherWindow.lua (pedido explicito del usuario) -- ver
     -- GATHER_BTN_Y arriba (subido, ya no espera a que termine TODO
     -- pageTop -- el lado izquierdo, donde vive este boton, esta libre de
     -- decoracion mucho antes que el lado derecho).
-    self.btnGather = Turbine.UI.Lotro.Button()
+    --
+    -- V17 (2026-09-04, pedido explicito del usuario: "cambiar el boton que
+    -- dice recoleccion por el boton que tenemos en la carpeta"): boton de
+    -- texto nativo "Recolección" -> icono "activar_icon" (la hoja verde
+    -- del set nuevo, elegida por el usuario -- tematicamente calza mejor
+    -- con recoleccion que cualquiera de los otros 5). Sin Quickslot detras
+    -- -- seguro cambiar el TIPO de control aca (a diferencia de Mapa/Ruta,
+    -- que el usuario pidio explicitamente dejar nativos).
+    -- V19 (2026-09-05, pedido explicito del usuario: "esta sobre la imagen
+    -- y lo ideal es que quede dentro como el boton de audio on u off"):
+    -- x=10 era literalmente el borde izquierdo de la ventana/pergamino
+    -- (fuera del area seguro real, ver SAFE_LEFT arriba) -- se veia
+    -- montado sobre el marco de madera en vez de "dentro" de la hoja, a
+    -- diferencia de btnAudioToggle (mas abajo), que ya usa SAFE_RIGHT como
+    -- margen real. SAFE_LEFT lo deja espejado con ese mismo criterio.
+    self.btnGather = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("activar_icon", 32, 32)
     self.btnGather:SetParent(self)
-    self.btnGather:SetPosition(10, GATHER_BTN_Y)
-    self.btnGather:SetSize(150, 22)
-    self.btnGather:SetText("Recolección")
+    self.btnGather:SetPosition(SAFE_LEFT, GATHER_BTN_Y)
     self.btnGather.MouseClick = function()
         if _G.GatherWindow then
             _G.GatherWindow:SetVisible(not _G.GatherWindow:IsVisible())
         end
     end
 
+    -- Boton de silenciar/activar el Narrador_IA (pedido explicito del
+    -- usuario, 2026-09-05: "un boton... si esta en verde esta on y si le
+    -- doy click el boton quede cambiado a off"). Espejado con btnGather en
+    -- el lado derecho de la misma fila superior -- misma Y, mismo tamaño
+    -- 32x32, mismo margen relativo al borde seguro del pergamino
+    -- (SAFE_LEFT/SAFE_RIGHT, ver la nota grande de esas constantes).
+    -- El icono en si (verde=on / gris con X=off) es la unica señal visual
+    -- de estado, no hay texto: mismo criterio que el resto de los botones
+    -- de icono de esta ventana (activar/desmarcar/narrar).
+    local function AudioIconName()
+        return NarratorMute.IsMuted() and "audio_off" or "audio_on"
+    end
+    self.btnAudioToggle = LQA.UI.MEMBookStyle.CreateIconButtonAlpha(AudioIconName(), 32, 32)
+    self.btnAudioToggle:SetParent(self)
+    self.btnAudioToggle:SetPosition(SAFE_RIGHT - 32, GATHER_BTN_Y)
+    -- Solo escribe la preferencia (Core/NarratorMute.lua) -- Narrador_IA (app
+    -- externa, unica pieza que de verdad reproduce audio) es quien deja de
+    -- narrar al verla en off; ver la nota grande de ese archivo.
+    self.btnAudioToggle.ButtonClicked = function()
+        NarratorMute.Toggle()
+    end
+    -- RefreshAudioIcon reasigna los 3 estados (normal/over/down) del boton ya
+    -- creado -- mismos 3 campos que arma CreateIconButtonAlpha, no hay una
+    -- API para "recrear" un boton ya parentado sin perder su posicion/
+    -- eventos. Se llama al toggle propio Y al restaurar la preferencia
+    -- guardada (NarratorMute.lua carga async, puede llegar despues de que
+    -- este boton ya se dibujo en su valor por defecto "on").
+    local function RefreshAudioIcon()
+        local tex = AudioIconName()
+        self.btnAudioToggle.normalIcon = LQA.UI.MEMBookStyle.RES_BASE .. tex .. ".tga"
+        self.btnAudioToggle.overIcon = LQA.UI.MEMBookStyle.RES_BASE .. tex .. "_over.tga"
+        self.btnAudioToggle.clickIcon = LQA.UI.MEMBookStyle.RES_BASE .. tex .. "_down.tga"
+        self.btnAudioToggle:SetBackground(
+            self.btnAudioToggle.mouseOver and self.btnAudioToggle.overIcon or self.btnAudioToggle.normalIcon
+        )
+    end
+    LQA.Core.EventBus:Subscribe("NARRATOR_MUTE_CHANGED", RefreshAudioIcon)
+
+    -- V17: 22 (alto viejo de btnGather, boton de texto nativo) -> 32 (alto
+    -- real del icono nuevo, ver btnGather mas arriba) para no superponerse.
+    -- V14: x=10->15 (SCALE), Y sin escalar -- GATHER_BTN_Y ya escalado, el
+    -- +32+10 es alto de icono (sin escalar, ver nota grande arriba) + un
+    -- margen chico fijo.
     self.listContainer = Turbine.UI.Control()
     self.listContainer:SetParent(self)
-    self.listContainer:SetPosition(10, GATHER_BTN_Y + 22 + 10)
+    -- x=10 (no 15): SAFE_LEFT-10 mas abajo (badge/lbl dentro de cada fila)
+    -- asume que listContainer arranca en 10 -- ver nota grande de
+    -- SAFE_LEFT/SAFE_RIGHT arriba.
+    self.listContainer:SetPosition(10, GATHER_BTN_Y + 32 + 10)
 
+    -- V14: 265/270/10 -> x1.5, mismo criterio que el resto del layout.
     self.listBox = Turbine.UI.ListBox()
     self.listBox:SetParent(self.listContainer)
     self.listBox:SetPosition(0, 0)
-    self.listBox:SetWidth(265)
+    -- Ancho = SAFE_RIGHT - 10 (listContainer arranca en x=10 -- ver nota
+    -- grande de SAFE_LEFT/SAFE_RIGHT): la fila llega justo hasta el margen
+    -- real medido contra el borde rasgado, ni un pixel de mas.
+    self.listBox:SetWidth(SAFE_RIGHT - 10)
 
     self.scrollBar = Turbine.UI.Lotro.ScrollBar()
     self.scrollBar:SetOrientation(Turbine.UI.Orientation.Vertical)
     self.scrollBar:SetParent(self.listContainer)
-    self.scrollBar:SetPosition(270, 0)
+    self.scrollBar:SetPosition(SAFE_RIGHT - 10 + 5, 0)
     self.scrollBar:SetWidth(10)
     self.listBox:SetVerticalScrollBar(self.scrollBar)
 
-    -- V3 -- pedido explicito del usuario ("que la ventana pueda adaptarse,
-    -- achicarse, y que se adapte la imagen y lo interno"): pageMid se
-    -- redimensiona para llenar EXACTO el hueco entre pageTop (fijo) y
-    -- pageBottom (fijo, reposicionado para quedar siempre pegado al borde
-    -- inferior) -- asi el pergamino se adapta de verdad a cualquier alto,
-    -- sin mosaico visible en los adornos (solo repite/recorta la tira
-    -- lisa del medio, invisible por diseño). El listContainer usa la MISMA
-    -- cuenta para no pisar pageBottom.
-    self.SizeChanged = function()
-        local w, h = self:GetSize()
-        if not w or not h then return end
-
-        local bottomY = h - PAGE_BOTTOM_H
-        local minBottomY = 30 + PAGE_TOP_H
-        if bottomY < minBottomY then bottomY = minBottomY end
-
-        -- V9 -- BUG CORREGIDO (pedido del usuario: "corte visual mal que
-        -- deforma la imagen original y no es continua"): el alto de
-        -- pageMid se ponia EXACTO al hueco disponible (bottomY-minBottomY)
-        -- -- casi nunca un multiplo de MID_TILE_H (112), asi que el mosaico
-        -- (SetBackground repite la imagen si el control es mas alto que
-        -- ella) quedaba CORTADO a mitad de patron justo contra el borde de
-        -- pageBottom -- ahi se veia la costura. Redondeado hacia ARRIBA al
-        -- proximo multiplo de 112: el mosaico siempre termina en un limite
-        -- de repeticion limpio, y el sobrante (menos de 1 tile) queda
-        -- oculto DETRAS de pageBottom (creado despues en este archivo =
-        -- mas z-order = se dibuja encima; el click en pageBottom sigue
-        -- funcionando igual, pageMid solo pinta por debajo).
-        local gap = bottomY - minBottomY
-        local midH = math.ceil(gap / MID_TILE_H) * MID_TILE_H
-        self.pageMid:SetSize(w, midH)
-        self.pageBottom:SetPosition(0, bottomY)
-
-        -- V6 -- BUG CORREGIDO (pedido explicito del usuario: "se mira que
-        -- esta cortado la imagen y pegada"): listH salia de un resto
-        -- (altura disponible - margenes) que casi nunca es multiplo
-        -- exacto de ROW_HEIGHT -- la ListBox mostraba la ULTIMA fila
-        -- MEDIO cortada justo pegada al borde inferior del pergamino
-        -- (choca visualmente contra el adorno de madera, se ve "cortado y
-        -- pegado"). Redondeando para abajo al multiplo de ROW_HEIGHT mas
-        -- cercano, la lista SIEMPRE termina en una fila completa -- el
-        -- resto (menos de 1 fila) queda como margen de pergamino en
-        -- blanco antes del adorno, no como texto a medias.
-        local listH = bottomY - 10 - self.listContainer:GetTop()
-        if listH < ROW_HEIGHT then listH = ROW_HEIGHT end
-        listH = math.floor(listH / ROW_HEIGHT) * ROW_HEIGHT
-        self.listContainer:SetSize(w - 20, listH)
-        self.listBox:SetHeight(listH)
-        self.scrollBar:SetHeight(listH)
-    end
-    -- SizeChanged solo dispara en un resize real del jugador, no en la
-    -- construccion -- se llama a mano una vez para que el layout inicial
-    -- (pageMid/pageBottom/listContainer) ya salga bien acomodado desde el
-    -- primer frame, sin depender de que el jugador redimensione primero.
-    self.SizeChanged()
+    -- Alto de la lista: YA NO se recalcula en cada resize (la ventana no
+    -- se redimensiona mas, ver nota grande del Constructor) -- se calcula
+    -- UNA sola vez con el tamaño fijo real.
+    -- V6 (pedido explicito del usuario: "se mira que esta cortado la
+    -- imagen y pegada"): listH sale de un resto (altura disponible -
+    -- margenes) que casi nunca es multiplo exacto de ROW_HEIGHT -- si no
+    -- se redondea, la ListBox muestra la ULTIMA fila MEDIO cortada justo
+    -- pegada al borde inferior del pergamino (choca contra el adorno de
+    -- madera, se ve "cortado y pegado"). Redondeando para abajo al
+    -- multiplo de ROW_HEIGHT mas cercano, la lista SIEMPRE termina en una
+    -- fila completa -- el resto (menos de 1 fila) queda como margen de
+    -- pergamino en blanco antes del adorno, no como texto a medias.
+    --
+    -- V12: redondeo cambiado de multiplo de ROW_HEIGHT (64, salto grande)
+    -- a multiplo de 8 (bug reportado: "sobra espacio abajo" -- con filas
+    -- mezcladas altas/normales (ROW_HEIGHT_TALL=88 vs ROW_HEIGHT=64) el
+    -- viejo redondeo a 64 tiraba a la basura hasta 63px reales de
+    -- pergamino ya angostado con PAGE_BOTTOM_H mas arriba. 8px de holgura
+    -- maxima es imperceptible y ya no reserva de mas.
+    local LIST_H_GRANULARITY = 8
+    local bottomY = CHROME_TOP + PAGE_H - PAGE_BOTTOM_H
+    local listH = bottomY - 10 - self.listContainer:GetTop()
+    if listH < ROW_HEIGHT then listH = ROW_HEIGHT end
+    listH = math.floor(listH / LIST_H_GRANULARITY) * LIST_H_GRANULARITY
+    self.listContainer:SetSize(SAFE_RIGHT - 10 + 20, listH)
+    self.listBox:SetHeight(listH)
+    self.scrollBar:SetHeight(listH)
 
     local function OnQuestEvent(data)
         if data and data.ndx and QuestDB.quests[data.ndx] then
@@ -405,9 +563,6 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                 if not cZone or qZone == cZone then
                     count = count + 1
 
-                    local item = Turbine.UI.Control()
-                    item:SetSize(265, ROW_HEIGHT)
-
                     local esName = HudQuestName(ndx, quest)
 
                     -- V2 (pedido explicito del usuario: "mejora la letra,
@@ -453,27 +608,77 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                     local qType = ClassifyQuest(quest)
                     local qColor = QUEST_TYPE_COLOR[qType]
 
+                    local prog = data.progress
+                    local displayText = (prog and prog ~= "") and (esName .. "  " .. prog) or esName
+
+                    -- Fila mas alta SOLO para nombres que necesitan 3 lineas
+                    -- (ver ROW_HEIGHT_TALL arriba) -- calculado ANTES de
+                    -- crear item/lbl para poder dimensionarlos de una, no
+                    -- despues.
+                    -- V16 (2026-09-04, pedido explicito del usuario: sacar
+                    -- el boton "Ir" de esta fila, dejar solo los otros 2
+                    -- -- ver mas abajo, btnGo eliminado por completo). Con
+                    -- ese espacio libre, lbl vuelve a ensancharse.
+                    --
+                    -- V17 (2026-09-04, pedido explicito del usuario: "el
+                    -- boton X se pierde muy chico, puede ser un poco mas
+                    -- grande" -- ver btnHide mas abajo, 24->32). Le saca
+                    -- 10px a lbl (160->150) para dejarle sitio de sobra al
+                    -- X mas grande sin superponerse. Umbrales de caracteres
+                    -- reescalados junto con lbl (~7.4px por caracter a esta
+                    -- fuente): 43/22 -> 40/20 -- casualmente los MISMOS
+                    -- valores que ya usa QuestSyncWindow.lua a su ancho
+                    -- original de 148px (150 es casi identico).
+                    --
+                    -- V16 (2026-09-05): lbl vuelve a ensancharse a 149 (ver
+                    -- nota grande de SAFE_LEFT/SAFE_RIGHT -- tracker_
+                    -- parchment_final deja MAS papel liso real que la
+                    -- version v2 anterior, casi el mismo ancho que el
+                    -- diseño original de 150). Umbral reescalado igual
+                    -- (149/150 ~= 1): 40 de nuevo (era 26 con el ancho
+                    -- angosto de V15).
+                    local rowHeight = (#displayText > 40) and ROW_HEIGHT_TALL or ROW_HEIGHT
+
+                    local item = Turbine.UI.Control()
+                    -- Ancho = mismo que self.listBox de mas arriba
+                    -- (SAFE_RIGHT-10, ver nota grande de SAFE_LEFT/
+                    -- SAFE_RIGHT).
+                    item:SetSize(SAFE_RIGHT - 10, rowHeight)
+
                     local badge = Turbine.UI.Control()
                     badge:SetParent(item)
-                    badge:SetPosition(0, 6)
+                    badge:SetPosition(SAFE_LEFT - 10, 6)
                     badge:SetSize(10, 10)
                     badge:SetBackColor(qColor)
 
                     local lbl = Turbine.UI.Label()
                     lbl:SetParent(item)
-                    lbl:SetPosition(16, 0)
-                    lbl:SetSize(148, ROW_HEIGHT)
+                    lbl:SetPosition(SAFE_LEFT - 10 + 16, 0)
+                    -- 149 (no 96, ver nota grande de SAFE_LEFT/SAFE_RIGHT):
+                    -- tracker_parchment_final deja mas papel liso real --
+                    -- este ancho llega justo hasta el boton X (btnHide mas
+                    -- abajo) sin superponerse.
+                    lbl:SetSize(149, rowHeight)
                     lbl:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold18)
                     lbl:SetForeColor(qColor)
-                    -- V7 (revertido) -- se probo sumar FontStyle.Outline
-                    -- para engordar el trazo (pedido explicito del
-                    -- usuario), pero el usuario reporto que a este tamaño
-                    -- el contorno se ve BORROSO en vez de mas grueso (el
-                    -- anti-aliasing del contorno se mezcla con el relleno
-                    -- a 18pt). Se saca -- BookAntiquaBold18 solo, sin
-                    -- contorno, se queda como la mejora de grosor real.
-                    local prog = data.progress
-                    local displayText = (prog and prog ~= "") and (esName .. "  " .. prog) or esName
+                    -- V7 (revertido en su momento) -- se habia probado
+                    -- FontStyle.Outline y se saco porque a 18pt se veia
+                    -- BORROSO contra el fondo VIEJO (un panel oscuro casi
+                    -- plano, donde el color solo ya alcanzaba para leerse).
+                    --
+                    -- V15 (2026-09-05, vuelto a poner -- pedido explicito
+                    -- del usuario: "el texto no se lee bien sobre el nuevo
+                    -- fondo... el mapa de fondo tiene mucho detalle y el
+                    -- texto se pierde"): el fondo nuevo es un mapa
+                    -- ilustrado con muchisimo detalle propio -- ahi el
+                    -- color solo YA NO alcanza (se demostro en el juego,
+                    -- captura del usuario). El contorno negro separa el
+                    -- texto de CUALQUIER textura de fondo en vez de
+                    -- depender de que el fondo sea plano -- mismo mecanismo
+                    -- ya usado con exito en QuestSyncWindow.lua/
+                    -- QuestBookWindow.lua sobre fondos igual de texturados.
+                    lbl:SetOutlineColor(Turbine.UI.Color(0, 0, 0))
+                    lbl:SetFontStyle(Turbine.UI.FontStyle.Outline)
                     lbl:SetText(displayText)
 
                     -- V10 -- pedido del usuario: los botones "Ir"/"X"
@@ -493,8 +698,16 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                     -- caracteres ya envolvia a 2). Si envuelve, se corren
                     -- los botones mas abajo para centrarse contra el
                     -- bloque de 2 lineas en vez de solo la primera.
+                    -- V16 (2026-09-05): lbl vuelve a 149 (ver nota grande
+                    -- de rowHeight mas arriba) -- umbrales vueltos a los
+                    -- originales 40/20.
                     local buttonY = 4
-                    if #displayText > 20 then
+                    if #displayText > 40 then
+                        -- 3 lineas (ver rowHeight arriba) -- X baja mas
+                        -- todavia para centrarse contra el bloque de 3
+                        -- lineas en vez de solo las 2 primeras.
+                        buttonY = 4 + 28
+                    elseif #displayText > 20 then
                         buttonY = 4 + 14
                     end
 
@@ -505,6 +718,9 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                     -- TODAS las misiones del area, sin forma de distinguir
                     -- cual era la seleccionada (bug reportado por el
                     -- usuario). Ver QuestSyncWindow:FocusQuest.
+                    -- Sin SFX de click (pedido explicito del usuario,
+                    -- 2026-09-03: "solo deben ir los sonidos que yo entregue
+                    -- como mp3" -- no hay mp3 real de click de fila).
                     item.MouseClick = function()
                         if _G.MainWindow then
                             _G.MainWindow:SetVisible(true)
@@ -524,53 +740,77 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                         QuestInfoTooltip.GetInstance():Hide()
                     end
 
-                    -- V4: pegado arriba (y=4, junto al texto) en vez de
-                    -- centrado en toda la fila -- ver nota grande del badge
-                    -- mas arriba (menos espacio vacio para nombres cortos).
-                    local loc = MoorMapAdapter.ResolveQuestLoc(ndx, quest)
-                    if loc and MoorMapAdapter then
-                        -- Se mantiene Turbine.UI.Lotro.Button a proposito
-                        -- (mismo motivo que btnGo de QuestBookWindow.lua):
-                        -- lleva un Quickslot real detras via MoorMapAdapter,
-                        -- y esa combinacion es la UNICA confirmada sin
-                        -- cierres en este addon -- no se cambia el TIPO de
-                        -- control por estetica, pero si se le puede poner
-                        -- la tipografia "libro" (SetFont/SetForeColor son
-                        -- API real del boton, no tocan el Quickslot).
-                        local btnGo = Turbine.UI.Lotro.Button()
-                        btnGo:SetParent(item)
-                        btnGo:SetPosition(168, buttonY)
-                        btnGo:SetSize(70, 26)
-                        btnGo:SetText(HT("go"))
-                        btnGo:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold14)
-
-                        local qs = MoorMapAdapter.CreateQuickslot()
-                        MoorMapAdapter.AttachToButton(qs, btnGo)
-
-                        local ns, ew = MoorMapAdapter.ParseCoord(loc)
-                        MoorMapAdapter.SetQuestMarker(qs, {
-                            mapID = MoorMapAdapter.ResolveMapID(quest),
-                            ns = ns or 0,
-                            ew = ew or 0,
-                            name = string.gsub(esName, ":", "-"),
-                            description = "Objetivo"
-                        })
-                    end
+                    -- V16 (2026-09-04, pedido explicito del usuario: "se
+                    -- puede sacar los botones de Ir, y dejar los otros 2
+                    -- que hay"). btnGo (Quickslot de MoorMap, saltaba
+                    -- directo al punto) eliminado de esta fila -- sigue
+                    -- existiendo el mismo salto vía FocusQuest al clickear
+                    -- la fila/nombre (abre QuestSyncWindow con la mision
+                    -- enfocada, que ahi si tiene sus botones Mapa/Ruta). Ya
+                    -- no hace falta resolver `loc`/Quickslot aca.
 
                     -- V10 -- pedido del usuario ("estilo generico, no
                     -- combina con el pergamino"): este boton NO lleva
-                    -- Quickslot (a diferencia de btnGo) -- solo oculta la
-                    -- mision (data.hidden), asi que es seguro cambiarlo del
-                    -- Lotro.Button generico al icono redondo "libro" que ya
-                    -- existe en Resources/Book/ (close_button.tga, mismo
-                    -- pack MEM que el resto de esta identidad visual).
-                    local btnHide = LQA.UI.MEMBookStyle.CreateIconButton("close_button", 25, 25)
+                    -- Quickslot -- solo oculta la mision (data.hidden), es
+                    -- seguro cambiarlo de control.
+                    --
+                    -- V16: close_button.tga (icono redondo generico "libro"
+                    -- MEM) -> "desmarcar_icon" del set nuevo (circulo rojo
+                    -- con X, del mismo pack que Activar/Completar/
+                    -- Desmarcar/Narrar) -- pedido explicito del usuario de
+                    -- usar el set de botones que ya integramos tambien
+                    -- aca. CreateIconButtonAlpha (no CreateIconButton): es
+                    -- arte a todo color nuevo, no una mascara vieja -- ver
+                    -- la nota grande de esa funcion en MEMBookStyle.lua
+                    -- sobre por que hace falta AlphaBlend + tamaño EXACTO.
+                    --
+                    -- V17 (2026-09-04, pedido explicito del usuario: "se
+                    -- pierde el diseño muy chico"): 24x24 -> 32x32 (el
+                    -- archivo desmarcar_icon.tga se regenero a ese tamaño
+                    -- real). lbl se angosto 10px (160->150, ver mas arriba)
+                    -- para dejarle sitio de sobra al X mas grande.
+                    local btnHide = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("desmarcar_icon", 32, 32)
                     btnHide:SetParent(item)
-                    btnHide:SetPosition(237, buttonY - 2)
+                    -- V15 (2026-09-05): margen recalculado sobre el
+                    -- SAFE_RIGHT remedido (ver nota grande de SAFE_LEFT/
+                    -- SAFE_RIGHT) -- 48 = 46 nativo x SCALE, mismo margen
+                    -- relativo de siempre.
+                    btnHide:SetPosition(SAFE_RIGHT - 48, buttonY - 4)
                     btnHide.ButtonClicked = function()
                         data.hidden = true
                         QuestStateManager.Save()
                         self:PopulateActive()
+                    end
+
+                    -- Boton "Narrar" (pedido explicito del usuario,
+                    -- 2026-09-01): pide a Narrador_IA (app externa, ver
+                    -- LOTRO_Chat_Narrator/Main.lua y Core/NarratorBridge.lua)
+                    -- que lea en voz alta el nombre + objetivos de esta
+                    -- mision. Se ancla en la esquina inferior izquierda de
+                    -- la fila -- el espacio que la V4 de arriba dejo siempre
+                    -- libre al final (nombres cortos no lo usan, nombres
+                    -- largos de 2 lineas casi no lo tocan) -- para no
+                    -- competir con el layout ya afinado de Ir/X arriba.
+                    --
+                    -- 2026-09-02 (pedido explicito del usuario: sinergia
+                    -- visual con el tema de libro/pergamino): mismo estilo
+                    -- "tag" cyan que en QuestSyncWindow.lua -- ver ese
+                    -- archivo para el porque es seguro aca (sin Quickslot).
+                    --
+                    -- V13 (2026-09-04): tag_cyan+"Narrar" (rotulo ancho,
+                    -- 65px) -> icono cuadrado "narrar_icon" del set nuevo
+                    -- (arte a todo color, CreateIconButtonAlpha -- ver
+                    -- MEMBookStyle.lua). Esta fila es la mas angosta de
+                    -- las 3 donde vive el boton Narrar (QuestSyncWindow/
+                    -- QuestBookWindow tienen mas lugar para el rotulo con
+                    -- la palabra completa) -- aca el icono solo (globo de
+                    -- dialogo) evita achicar/deformar un rotulo de texto a
+                    -- un espacio que no le entra.
+                    local btnNarrar = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("narrar_icon", 24, 24)
+                    btnNarrar:SetParent(item)
+                    btnNarrar:SetPosition(SAFE_LEFT - 10, rowHeight - 24)
+                    btnNarrar.ButtonClicked = function()
+                        NarratorBridge.PlayQuestText(ndx, quest, esName)
                     end
 
                     self.listBox:AddItem(item)
@@ -599,7 +839,7 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                 count = count + 1
 
                 local item = Turbine.UI.Control()
-                item:SetSize(265, ROW_HEIGHT)
+                item:SetSize(SAFE_RIGHT - 10, ROW_HEIGHT)
 
                 -- V4: pegado arriba (y=6), mismo criterio que la fila de
                 -- misiones (ver nota grande mas arriba).
@@ -612,18 +852,22 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
                 local deedColor = Turbine.UI.Color(0.35, 0.20, 0.45)
                 local badge = Turbine.UI.Control()
                 badge:SetParent(item)
-                badge:SetPosition(0, 6)
+                badge:SetPosition(SAFE_LEFT - 10, 6)
                 badge:SetSize(10, 10)
                 badge:SetBackColor(deedColor)
 
                 local lbl = Turbine.UI.Label()
                 lbl:SetParent(item)
-                lbl:SetPosition(16, 0)
-                lbl:SetSize(249, ROW_HEIGHT)
+                lbl:SetPosition(SAFE_LEFT - 10 + 16, 0)
+                lbl:SetSize(SAFE_RIGHT - SAFE_LEFT - 16, ROW_HEIGHT)
                 lbl:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold18)
                 lbl:SetForeColor(deedColor)
-                -- V7 (revertido, ver nota grande de la fila de misiones):
-                -- sin contorno -- se veia borroso a este tamaño.
+                -- V15 (2026-09-05, mismo motivo/pedido que la fila de
+                -- misiones mas arriba): contorno vuelto a poner, el fondo
+                -- nuevo tiene demasiado detalle propio para leer color
+                -- solo.
+                lbl:SetOutlineColor(Turbine.UI.Color(0, 0, 0))
+                lbl:SetFontStyle(Turbine.UI.FontStyle.Outline)
                 lbl:SetText(tostring(deed.NAME))
 
                 self.listBox:AddItem(item)
@@ -633,12 +877,12 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
 
     if count == 0 then
         local empty = Turbine.UI.Control()
-        empty:SetSize(265, 26)
+        empty:SetSize(SAFE_RIGHT - 10, 26)
 
         local lbl = Turbine.UI.Label()
         lbl:SetParent(empty)
-        lbl:SetPosition(0, 0)
-        lbl:SetSize(265, 26)
+        lbl:SetPosition(SAFE_LEFT - 10, 0)
+        lbl:SetSize(SAFE_RIGHT - SAFE_LEFT, 26)
         lbl:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiqua12)
         -- V2: gris (0.6,0.6,0.6) tenia buen contraste sobre el panel OSCURO
         -- de antes -- sobre pergamino claro es casi invisible. HeadingGray
@@ -647,6 +891,9 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
         -- criterio que BodyText pero un poco mas claro para que se note
         -- que es un estado "vacio", no una fila real.
         lbl:SetForeColor(Turbine.UI.Color(0.45, 0.42, 0.38))
+        -- V15 (2026-09-05, mismo motivo que las filas de arriba).
+        lbl:SetOutlineColor(Turbine.UI.Color(0, 0, 0))
+        lbl:SetFontStyle(Turbine.UI.FontStyle.Outline)
         lbl:SetText(HT("empty"))
 
         self.listBox:AddItem(empty)

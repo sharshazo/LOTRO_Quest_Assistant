@@ -1,5 +1,7 @@
 -- QuestSync Data/QuestDatabase_009.lua
-Turbine.Shell.WriteLine("<rgb=#FF8800>QuestDatabase: Cargando bloque 9...</rgb>")
+if LQA.Debug.Enabled then
+    Turbine.Shell.WriteLine("<rgb=#FF8800>QuestDatabase: Cargando bloque 9...</rgb>")
+end
 _G.QuestDB.quests[12001] = {
     id = "7000E8BB",
     ndx = 12001,

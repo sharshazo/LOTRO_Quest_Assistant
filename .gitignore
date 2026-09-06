@@ -3,3 +3,14 @@
 __MACOSX/
 .DS_Store
 Thumbs.db
+
+# Scripts de generacion de datos de una sola vez (usados para armar la
+# narracion de Narrador_IA) -- no los usa el addon en juego, y pesan
+# 55MB+ juntos.
+extract_for_narration.lua
+narration_export.lua
+narration_export_full.lua
+
+# Iteraciones de arte guardadas durante el desarrollo -- el addon en
+# juego solo usa el archivo final (sin "_BACKUP" en el nombre).
+*_BACKUP.tga

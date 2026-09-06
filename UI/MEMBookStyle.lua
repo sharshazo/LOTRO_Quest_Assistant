@@ -119,6 +119,70 @@ function MEMBookStyle.CreateIconButton(texture, w, h, text)
     return btn
 end
 
+-- Boton de icono con 3 estados, MISMA logica que CreateIconButton, con
+-- BlendMode.AlphaBlend (2026-09-04, pedido explicito del usuario: integrar
+-- el set nuevo de botones -- activar/completar/desmarcar/narrar, arte a
+-- todo color con texto ya quemado adentro).
+--
+-- Historial real de esta funcion, 3 rondas con captura del usuario cada
+-- vez (para que la proxima sesion no repita el mismo tanteo):
+-- V1: BlendMode.AlphaBlend + imagen fuente MAS GRANDE (440x160/132x48) que
+--     el control (66x24) -- se vio en blanco/recortado (solo un hilo de
+--     texto arriba, resto negro). Causa real (descubierta en V3):
+--     SetBackground NO reescala la imagen al tamaño del control, la
+--     dibuja a su resolucion REAL y recorta -- el problema nunca fue el
+--     BlendMode.
+-- V2: se saco el BlendMode por completo, sospechando (mal) que el
+--     problema era ese -- con la imagen todavia mas grande que el
+--     control, seguia recortada/rota iron igual.
+-- V3: imagen generada YA al tamaño exacto del control (66x24 etc, ver
+--     cada call site) -- esto arreglo el recorte, PERO sin BlendMode el
+--     canal alfa no se respeta: las esquinas transparentes (RGBA
+--     0,0,0,0 real, confirmado con Pillow) se dibujaban NEGRAS solidas en
+--     vez de invisibles -- "veo lo que esta detras... borde negro"
+--     reportado por el usuario.
+-- V4 (esta version): imagen a tamaño exacto (de V3) + BlendMode.AlphaBlend
+--     de vuelta (de V1) -- las 2 correcciones son ORTOGONALES y hacen
+--     falta las 2 juntas: tamaño exacto para que no recorte, AlphaBlend
+--     para que respete el alfa de las esquinas. Ademas el PNG fuente se
+--     escala con alfa PREMULTIPLICADO antes de guardar el .tga (evita el
+--     halo/franja oscura semitransparente que dejaba un resize ingenuo en
+--     los bordes redondeados -- ver herramienta de conversion, no vive en
+--     este archivo Lua).
+-- Sin parametro `text`: estos botones nuevos ya traen la palabra dibujada
+-- en el propio PNG.
+function MEMBookStyle.CreateIconButtonAlpha(texture, w, h)
+    local btn = Turbine.UI.Control()
+    btn.normalIcon = MEMBookStyle.RES_BASE .. texture .. ".tga"
+    btn.clickIcon = MEMBookStyle.RES_BASE .. texture .. "_down.tga"
+    btn.overIcon = MEMBookStyle.RES_BASE .. texture .. "_over.tga"
+    btn.mouseOver = false
+
+    btn:SetSize(w, h)
+    btn:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+    btn:SetBackground(btn.normalIcon)
+    btn:SetMouseVisible(true)
+    btn:SetVisible(true)
+
+    btn.MouseEnter = function()
+        btn.mouseOver = true
+        btn:SetBackground(btn.overIcon)
+    end
+    btn.MouseLeave = function()
+        btn.mouseOver = false
+        btn:SetBackground(btn.normalIcon)
+    end
+    btn.MouseDown = function()
+        btn:SetBackground(btn.clickIcon)
+        if btn.ButtonClicked then btn.ButtonClicked() end
+    end
+    btn.MouseUp = function()
+        btn:SetBackground(btn.mouseOver and btn.overIcon or btn.normalIcon)
+    end
+
+    return btn
+end
+
 -- Boton "etiqueta" con texto (Continue/Restart en MEM) -- calcado de
 -- MEMCommon/MEMTagButton.lua. `color` es "blue" | "cyan" | "red" (los 3
 -- juegos de tag_*.tga copiados a Resources/Book/).

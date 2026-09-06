@@ -82,6 +82,13 @@ function LQA.UI.GatherWindow:Constructor()
     self:SetSize(WINDOW_W_MIN, self.mapTop + 220)
     self:SetText("Recolección")
     self:SetVisible(false)
+
+    -- SFX de "abrir ventana" RETIRADO (pedido explicito del usuario,
+    -- 2026-09-03): Turbine.PluginData.Save no escribe al instante -- tarda
+    -- entre ~2 y ~15s segun un ciclo propio del cliente (confirmado en vivo,
+    -- ver la nota grande en NarratorBridge.lua) -- un sonido de "click"
+    -- que puede tardar hasta 15s no cumple ningun proposito de feedback
+    -- inmediato, asi que se saca en vez de dejarlo sonando fuera de tiempo.
     -- Redimensionable como el resto de las ventanas del addon (mismo
     -- mecanismo real que QuestSyncWindow.lua: SetResizable + SetMinimumSize
     -- + SizeChanged, confirmado en produccion).

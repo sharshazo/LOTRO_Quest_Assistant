@@ -45,15 +45,48 @@ _G.QuestSyncWindow = class(Turbine.UI.Lotro.Window)
 local CHROME_TOP = 40
 local PAGE_W, PAGE_H = 624, 508
 local WIDTH, HEIGHT = PAGE_W, PAGE_H + CHROME_TOP
-local MAP_W, MAP_H = 300, 200
+-- MAP_H bajado de 200 a 150 (2026-09-05): al agrandar titulo/descripcion
+-- (Bold18->24, 16->18, pedido explicito del usuario) y necesitar mas
+-- margen abajo para que MoorMap/Waypoint no toquen el marco de madera
+-- (otro pedido de la misma sesion), el presupuesto vertical real de la
+-- pagina nueva (quest_journal_skin.png) ya no alcanza para los 3 al
+-- tamaño viejo. Se prioriza texto grande + botones sin recorte por sobre
+-- el minimapa a tamaño maximo -- avisar si se prefiere el orden inverso.
+local MAP_W, MAP_H = 300, 150
 local RES_BASE = "LOTRO_Quest_Assistant/Resources/"
 local BOOK_RES = "LOTRO_Quest_Assistant/Resources/Book/"
+
+-- Ventana popup de Mapa/Ruta por punto (2026-09-05, reemplaza la lista
+-- embebida con scrollbar -- ver la nota grande junto a self.pointsPopup
+-- en el Constructor). Ancho justo para los items de RIGHT_W(300) + su
+-- propia scrollbar, sin depender de ningun recorte de pixeles del libro.
+-- Alto chico a proposito (pedido explicito del usuario, "puede ser mas
+-- pequeña") -- tiene su propio scroll, no necesita mostrar todo de una.
+local POPUP_W, POPUP_H = 340, 260
+
+-- Recorte real del anillo dentro de book_menu.tga (624x508, esquina
+-- inferior derecha) -- offset medido pixel a pixel comparando
+-- ring_normal.png contra el skin nuevo (quest_journal_skin.png), no
+-- adivinado: es el que da la menor diferencia de color posible (avg ~27
+-- de 765 por canal, resto explicado por reencode PNG/TGA), y ademas
+-- calza justo con el borde inferior derecho de la pagina (504+120=624,
+-- 383+125=508) -- el anillo esta pegado a esa esquina.
+local RING_X, RING_Y, RING_W, RING_H = 504, 383, 120, 125
 
 -- Columna izquierda ("Mapas"/"Titulos") -- coordenadas calcadas de
 -- MEMMain.lua: seriesLabel (23,71,236,24) y booksList (23,98,218,384) con
 -- su scrollbar en (246,98,10,384).
 local LEFT_X, LEFT_W = 23, 218
-local LEFT_HEADER_Y = 71
+-- LEFT_HEADER_Y/RIGHT_HEADER_Y CORREGIDOS (2026-09-05, pedido explicito
+-- del usuario: "los titulos... estan flotando por ENCIMA del cartel de
+-- pergamino decorativo... hay que bajar/centrar ambos"). 71 era valido
+-- para el cartel del SKIN VIEJO -- con quest_journal_skin.png (book_menu.
+-- tga actual) el cartel real (la cinta con puntas) se midio pixel por
+-- pixel: banda legible pareja en TODO su ancho, y=89 a y=102 (Pillow,
+-- ambos lados, izquierda y derecha dan el mismo rango). Centro = 95.5;
+-- con caja de 24-25px de alto y TextAlignment.MiddleCenter, Y=83 centra
+-- el texto justo en esa banda.
+local LEFT_HEADER_Y = 83
 local LEFT_SCROLL_X = 246
 
 -- Columna derecha ("Informacion"): RIGHT_X/RIGHT_W se corrigieron de
@@ -63,8 +96,7 @@ local LEFT_SCROLL_X = 246
 -- ver la nota grande junto a RIGHT_BOTTOM_LIMIT). 300 = mismo ancho que
 -- MAP_W, con margen parejo a los 2 lados del pergamino real (279 a 595).
 local RIGHT_X, RIGHT_W = 279, 300
-local RIGHT_HEADER_Y = 71
-local RIGHT_SCROLL_X = 585
+local RIGHT_HEADER_Y = 83 -- ver nota grande junto a LEFT_HEADER_Y
 
 local TITLE_X, TITLE_Y, TITLE_W = 152, 7, 322
 -- ARROW_RIGHT_X 582->548: los botones "tag" de MEM (68px de ancho) no
@@ -72,11 +104,15 @@ local TITLE_X, TITLE_Y, TITLE_W = 152, 7, 322
 local ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_Y = 14, 548, 10
 local LANG_BTN_X, LANG_BTN_Y = 582, 40
 
-local BANNER_Y = 44
-local SEARCH_Y = 97
-local SEARCHINFO_Y = 118
-local LIST_Y = 129
-local LIST_H = 353 -- termina en 482
+-- SEARCH_Y/SEARCHINFO_Y/LIST_Y bajados +12 (mismo delta que
+-- LEFT_HEADER_Y: 83-71) para no quedar tapados por el cartel "Mapas" que
+-- ahora ocupa mas abajo (termina en Y+24=107, antes terminaba en 95).
+-- LIST_H se achica los mismos 12px para conservar el limite inferior real
+-- de la columna (129+353=482, ahora 141+341=482 -- identico).
+local SEARCH_Y = 109
+local SEARCHINFO_Y = 130
+local LIST_Y = 141
+local LIST_H = 341 -- termina en 482 (igual que antes)
 
 -- BUG CORREGIDO CON MEDICION REAL (los 2 intentos anteriores adivinaban
 -- las zonas de book_menu.tga a ojo desde capturas -- esta vez se convirtio
@@ -101,27 +137,45 @@ local LIST_H = 353 -- termina en 482
 -- con contorno negro (ver ApplyReadableStyle) en vez de tinta oscura --
 -- asi se lee igual sobre pergamino o sobre madera, sin tener que acertar
 -- el pixel exacto donde cambia el fondo.
-local RIGHT_BOTTOM_LIMIT = 465 -- ultimo pixel util antes de los botones Mapa/Ruta (476)
+-- RIGHT_BOTTOM_LIMIT CORREGIDO (2026-09-05, pedido explicito del usuario:
+-- "MoorMap/Waypoint... casi tocando el marco de madera"). 465 era valido
+-- para el skin viejo -- en quest_journal_skin.png (book_menu.tga actual)
+-- se re-midio pixel por pixel: el pergamino real (brillo parejo) llega
+-- hasta y=468-472 en toda la columna, con un filo de madera iluminado en
+-- 476 y la franja oscura del marco recien empieza en 480.
+local RIGHT_BOTTOM_LIMIT = 474 -- ultimo pixel util antes del marco (madera empieza en 480)
 local PARCHMENT_X0, PARCHMENT_X1 = 279, 595 -- limites reales del pergamino
 local PARCHMENT_Y0, PARCHMENT_Y1 = 109, 438
 local RIBBON_X0 = 548 -- el titulo/descripcion no cruzan mas alla de aca (esquiva la cinta)
 
 local RIGHT_TITLE_Y = PARCHMENT_Y0 + 4 -- 113
-local RIGHT_TITLE_H = 26
+-- BUG CORREGIDO (screenshot del usuario, 2026-09-03: "perdida de texto de
+-- los titulos" -- un nombre de 2 lineas, ej. "Libro 5, Capitulo 1: Hacia
+-- las Montañas Nubladas", se dibujaba con la 2da linea encima de "Nivel:").
+-- lblTitle tiene SetMultiline(true) pero esta caja solo reservaba 26px (1
+-- linea) -- mismo tipo de bug ya corregido antes en QuestBookWindow.lua
+-- (lblTitle ahi reserva 40px/2 lineas), nunca aplicado aca. Mismo valor
+-- (40px/2 lineas, no 3): esta columna es bastante mas ancha (263px vs 148px
+-- del Tracker) asi que 2 lineas ya cubren nombres bien largos sin comerse
+-- de mas el espacio de abajo.
+-- 52 (no 40): pedido explicito del usuario ("aumentar el tamaño de esos
+-- textos"), lblTitle paso de BookAntiquaBold18 a BookAntiquaBold24 -- 2
+-- lineas a ese tamaño necesitan mas alto real (mismo motivo que el bug de
+-- arriba, solo que con la fuente mas grande).
+local RIGHT_TITLE_H = 52
 local RIGHT_TITLE_W = RIBBON_X0 - PARCHMENT_X0 - 6 -- 263, esquiva la cinta
-local RIGHT_DESC_Y = RIGHT_TITLE_Y + RIGHT_TITLE_H + 4 -- 143
-local RIGHT_DESC_H = 56 -- termina en 199, todavia dentro del pergamino
+local RIGHT_DESC_Y = RIGHT_TITLE_Y + RIGHT_TITLE_H + 4
+-- 60 (no 56): lblDesc paso de BookAntiqua16 a BookAntiqua18 (mismo pedido
+-- de arriba), 3 lineas (Nivel/Progreso/Destino) necesitan un poco mas.
+local RIGHT_DESC_H = 60
 local RIGHT_DESC_W = RIGHT_TITLE_W
 
--- Mapa/lista de puntos: empiezan despues de la descripcion. Con mapa
--- (300x200 real, pedido explicito del usuario) el pergamino ya no alcanza
--- para nada mas debajo -- la lista de puntos queda angosta pero con
--- scroll (o se puede expandir con el boton "Ver puntos", ver
--- self.pointsExpanded); sin mapa, la lista tiene todo el resto del
--- pergamino.
+-- Mapa: empieza despues de la descripcion. El detalle de puntos (Punto
+-- 1/2/3... + Mapa/Ruta de cada uno) ya NO vive en el panel -- ver
+-- self.pointsPopup en el Constructor -- asi que RIGHT_POINTS_Y_MAP solo
+-- posiciona el encabezado "Puntos:" + el boton que abre esa ventana.
 local RIGHT_CONTENT_Y = RIGHT_DESC_Y + RIGHT_DESC_H + 6 -- 205 (Y del mapa, SOLO se usa para eso)
 local RIGHT_POINTS_Y_MAP = RIGHT_CONTENT_Y + MAP_H + 6 -- 411
-local RIGHT_POINTS_H_MAP = RIGHT_BOTTOM_LIMIT - RIGHT_POINTS_Y_MAP -- 54
 
 -- Fila de botones Activar/Completar/Desmarcar (SOLO misiones, pedido
 -- explicito del usuario: "los objetivos de las misiones no tiene botones"
@@ -131,17 +185,37 @@ local RIGHT_POINTS_H_MAP = RIGHT_BOTTOM_LIMIT - RIGHT_POINTS_Y_MAP -- 54
 -- afectar el layout de Puntos de Interes/Tropas, que nunca muestran estos
 -- botones.
 local RIGHT_ACTIONS_Y = RIGHT_CONTENT_Y -- 205
-local RIGHT_ACTIONS_H = 24
-local RIGHT_POINTS_Y_NOMAP = RIGHT_ACTIONS_Y + RIGHT_ACTIONS_H + 6 -- 235
-local RIGHT_POINTS_H_NOMAP = RIGHT_BOTTOM_LIMIT - RIGHT_POINTS_Y_NOMAP -- 230
--- Pedido del usuario ("los botones de abajo se rompen, reubicarlos un
--- poco mas arriba"): medido pixel a pixel en book_menu.tga -- la franja
--- oscura uniforme (~17-27 de valor) va de y=444 a y=495; el borde de
--- madera calido del marco empieza recien ahi. A y=476 (alto 26, hasta
--- y=502) estos botones invadian los ultimos ~7px de esa madera -- ahi se
--- veian "rotos"/cortados. Subido a 462: quedan enteros (462-488) dentro
--- de la franja oscura pareja, lejos del borde.
-local RIGHT_BTN_Y = 462
+-- V15 (2026-09-04, pedido explicito del usuario: "pueden ser un poco mas
+-- grande, se pierde la lectura visual" -- ya con el arte nuevo instalado y
+-- funcionando bien). 4 botones en 1 sola fila (66x24 cada uno) no tenian
+-- margen para crecer: a actionBtnW(72) de paso, los 4 YA llenaban
+-- RIGHT_W(300) exacto (4*72 + 3*4 = 300), no quedaba aire. Pasado a grilla
+-- 2x2 -- mismo criterio que MAP_W/MAP_H mas arriba, reparte el mismo
+-- ancho total en menos columnas para que cada boton sea mas grande. Cada
+-- celda mantiene el ratio real del arte (440x160 = 2.75:1, ver
+-- MEMBookStyle.lua) para no deformar el texto quemado en la imagen.
+-- V19 (2026-09-04, pedido explicito del usuario: "podemos achicar un
+-- poquito esos botones, quizas un 30%"). ACTION_COL_W ya no llena la
+-- columna entera (148) -- se reduce un 30% (0.7x) desde ese tamaño
+-- "lleno". El bloque 2x2 completo se achica con el mismo factor (ver
+-- RIGHT_ACTIONS_H mas abajo), asi que la lista de "Objetivo de la Mision"
+-- recupera parte del alto que le habia sacado la grilla mas grande de V15.
+local ACTION_GAP = 4
+local ACTION_COL_W = math.floor(math.floor((RIGHT_W - ACTION_GAP) / 2) * 0.7) -- 103
+local ACTION_ROW_H = math.floor(ACTION_COL_W / 2.75) -- 37
+local RIGHT_ACTIONS_H = ACTION_ROW_H * 2 + ACTION_GAP -- 78 (bloque completo, para RIGHT_POINTS_Y_NOMAP)
+local RIGHT_POINTS_Y_NOMAP = RIGHT_ACTIONS_Y + RIGHT_ACTIONS_H + 6 -- 289
+-- RIGHT_BTN_Y CORREGIDO DE NUEVO (2026-09-05, pedido explicito del
+-- usuario: "MoorMap/Waypoint... casi tocando el marco de madera... su
+-- texto de atajo queda cortado"). 462 era correcto para el skin viejo,
+-- pero con quest_journal_skin.png (RIGHT_BOTTOM_LIMIT re-medido a 474, ver
+-- nota grande ahi) y los botones ahora mas altos (32, no 26, para dejarle
+-- lugar real al "/Moo"/"/Way" que dibuja el Quickslot nativo debajo del
+-- boton -- ver la nota grande de MoorMapAdapter.AttachToButton sobre ese
+-- sangrado, NUNCA resuelto del todo, solo mitigado con mas espacio real),
+-- 462+32=494 se hubiera metido de lleno en el marco. Subido a 427: deja
+-- 474-(427+32)=15px libres antes del marco para ese sangrado.
+local RIGHT_BTN_Y = 427
 
 local POI_ICON = RES_BASE .. "chest.jpg"
 local THREAT_ICON = RES_BASE .. "threat.tga"
@@ -156,11 +230,17 @@ end
 -- Categorias = "paginas" logicas (se pasan con las flechas <>). leftHeader
 -- indica que texto va en la columna izquierda para esa categoria (pedido
 -- explicito del usuario: "Mapas" para QuestSync, "Titulos" para el resto).
+-- leftHeader UNIFICADO a "left_header_maps" en las 4 pestañas (2026-09-05,
+-- pedido explicito del usuario: "en las otras ventanas aparece TITULOS,
+-- poner MAPAS") -- antes Puntos de Interes/Tropas y Amenazas/Colecciones
+-- usaban "left_header_titles" ("Titulos"), decision deliberada de una
+-- sesion anterior; el usuario la reemplaza ahora por el mismo texto
+-- "Mapas" en las 4.
 local TABS = {
     { key = "misiones", label = "QuestSync", labelEN = "QuestSync", leftHeader = "left_header_maps" },
-    { key = "puntos", label = "Puntos de Interes", labelEN = "Points of Interest", db = "ChestsDB", icon = POI_ICON, leftHeader = "left_header_titles" },
-    { key = "tropas", label = "Tropas y Amenazas", labelEN = "Threats & Troops", db = "ThreatsDB", icon = THREAT_ICON, leftHeader = "left_header_titles" },
-    { key = "lostlore", label = "Colecciones", labelEN = "Collections", db = "LostLoreDB", resolveIcon = LostLoreIconFor, leftHeader = "left_header_titles" },
+    { key = "puntos", label = "Puntos de Interes", labelEN = "Points of Interest", db = "ChestsDB", icon = POI_ICON, leftHeader = "left_header_maps" },
+    { key = "tropas", label = "Tropas y Amenazas", labelEN = "Threats & Troops", db = "ThreatsDB", icon = THREAT_ICON, leftHeader = "left_header_maps" },
+    { key = "lostlore", label = "Colecciones", labelEN = "Collections", db = "LostLoreDB", resolveIcon = LostLoreIconFor, leftHeader = "left_header_maps" },
 }
 
 -- Paleta "tinta sobre pergamino" (ver MEMMain.lua: seriesLabel/memoirLabel
@@ -354,7 +434,6 @@ function QuestSyncWindow:Constructor()
     self.activeTab = "misiones"
     self.collapsedAreas = {}
     self.collapsedZones = {}
-    self.pointsExpanded = false
 
     -- Fondo de panel real (624x508, tamaño nativo del .tga -- calcado de
     -- MEMMain.lua sobre este mismo book_menu.tga). HIJO de la ventana,
@@ -366,6 +445,46 @@ function QuestSyncWindow:Constructor()
     self.pageBg:SetBackground(BOOK_RES .. "book_menu.tga")
     self.pageBg:SetMouseVisible(false)
 
+    -- "Iluminacion" del anillo al pasar el mouse por CUALQUIER parte de la
+    -- ventana (pedido explicito del usuario, ref. quest_journal_skin.png/
+    -- ring_hover.png). NO se duplica el skin completo en 2 versiones: se
+    -- superpone una capa aparte, chica (120x125, exactamente el recorte de
+    -- RING_X/RING_Y de arriba), invisible por defecto -- el resto del
+    -- libro (botones, texto, mecanismo de ventana) no se toca para nada.
+    self.ringGlow = Turbine.UI.Control()
+    self.ringGlow:SetParent(self.pageBg)
+    self.ringGlow:SetPosition(RING_X, RING_Y)
+    self.ringGlow:SetSize(RING_W, RING_H)
+    self.ringGlow:SetBackground(BOOK_RES .. "ring_hover.tga")
+    self.ringGlow:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+    self.ringGlow:SetMouseVisible(false)
+    self.ringGlow:SetVisible(false)
+
+    -- Deteccion de hover con POLL de posicion real del mouse (Update),
+    -- NO con MouseEnter/Leave de la ventana: los botones/lista/textbox de
+    -- adentro tienen su propio SetMouseVisible(true), y en este SDK
+    -- (calcado de WinForms, mismo problema documentado con
+    -- Panel.MouseEnter) eso corta el Enter/Leave del padre cada vez que
+    -- el mouse pasa por encima de un hijo -- el anillo parpadearia en vez
+    -- de quedar prendido mientras el mouse siga dentro de la ventana.
+    -- GetMousePosition() da la posicion real sin importar que control
+    -- este debajo -- mismo metodo que ya usa el drag de self.MouseMove
+    -- mas abajo. Mismo patron de "control fantasma con Update" que
+    -- self.searchDebounceControl mas abajo.
+    self.ringHoverPoll = Turbine.UI.Control()
+    self.ringHoverPoll:SetParent(self.pageBg)
+    self.ringHoverPoll:SetVisible(false)
+    self.ringHoverPoll:SetWantsUpdates(true)
+    self.ringHovering = false
+    self.ringHoverPoll.Update = function()
+        local mx, my = self:GetMousePosition()
+        local over = mx >= 0 and mx < PAGE_W and my >= CHROME_TOP and my < HEIGHT
+        if over ~= self.ringHovering then
+            self.ringHovering = over
+            self.ringGlow:SetVisible(over)
+        end
+    end
+
     -- Titulo (nombre de la categoria activa) -- mismo lugar/tamaño que el
     -- "Middle Earth Memoirs" de MEMMain.lua.
     self.lblCategory = Turbine.UI.Label()
@@ -373,7 +492,13 @@ function QuestSyncWindow:Constructor()
     self.lblCategory:SetPosition(TITLE_X, TITLE_Y)
     self.lblCategory:SetSize(TITLE_W, 32)
     self.lblCategory:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold24)
-    self.lblCategory:SetForeColor(INK)
+    -- Dorado (no INK/gris, pedido explicito del usuario: "los titulos
+    -- como tropas y amenazas... deben ser dorados") -- reusa
+    -- MEMBookStyle.Color.TagText, el mismo dorado-tostado que ya usan las
+    -- etiquetas de los botones "tag" de este addon, en vez de inventar un
+    -- color nuevo. Es 1 solo Label compartido por las 4 pestañas
+    -- (QuestSync/Puntos de Interes/Tropas y Amenazas/Colecciones).
+    self.lblCategory:SetForeColor(LQA.UI.MEMBookStyle.Color.TagText)
     self.lblCategory:SetTextAlignment(Turbine.UI.ContentAlignment.MiddleCenter)
     self.lblCategory:SetMouseVisible(false)
     self.lblCategory:SetSelectable(false)
@@ -418,46 +543,6 @@ function QuestSyncWindow:Constructor()
     self.btnLanguage:SetText(T("lang_btn"))
     self.btnLanguage.MouseClick = function()
         LanguageSettings.Toggle()
-    end
-
-    -- Banda de mision activa/rastreada (nombre + progreso en una sola
-    -- linea + salto directo), visible en cualquier categoria.
-    self.activeBadge = Turbine.UI.Control()
-    self.activeBadge:SetParent(self.pageBg)
-    self.activeBadge:SetPosition(LEFT_X, BANNER_Y + 3)
-    self.activeBadge:SetSize(10, 10)
-    self.activeBadge:SetBackColor(Turbine.UI.Color(1, 0.82, 0.3))
-    self.activeBadge:SetVisible(false)
-
-    self.lblActiveName = Turbine.UI.Label()
-    self.lblActiveName:SetParent(self.pageBg)
-    self.lblActiveName:SetPosition(LEFT_X + 16, BANNER_Y)
-    -- Alto 24 (no 18): visto en captura con zoom que texto Bold+contorno
-    -- se ve borroso/recortado cuando la caja es mas baja de lo que el
-    -- contorno necesita (mismo bug que lblStagesHeader mas abajo).
-    self.lblActiveName:SetSize(TITLE_X + TITLE_W - LEFT_X - 16 - 50, 24)
-    self.lblActiveName:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold14)
-    ApplyReadableStyle(self.lblActiveName, ROW_ACCENT)
-    self.lblActiveName:SetText(T("no_active_quest"))
-
-    -- BUG CORREGIDO (visto en captura con zoom del usuario: el boton "Ir"
-    -- se superponia con el encabezado "Informacion"): los botones con
-    -- Quickslot de MoorMap dibujan 2 lineas (etiqueta + "/Moo", igual que
-    -- ya se ve sin problema en QuestTrackerHUD.lua) y necesitan las MISMAS
-    -- dimensiones reales que se usan ahi (70x26, no 44x22) para no
-    -- recortarse. Se reposiciona mas arriba, en la franja de madera entre
-    -- el titulo y el encabezado de columna, donde no compite en horizontal
-    -- con ningun otro texto (el titulo termina en x=474, este boton
-    -- empieza en x=509).
-    self.activeGoBtn = Turbine.UI.Lotro.Button()
-    self.activeGoBtn:SetParent(self.pageBg)
-    self.activeGoBtn:SetPosition(RIGHT_X + RIGHT_W - 70, 40)
-    self.activeGoBtn:SetSize(70, 26)
-    self.activeGoBtn:SetText(T("go"))
-    self.activeGoBtn:SetVisible(false)
-    if MoorMapAdapter then
-        self.activeGoQuickslot = MoorMapAdapter.CreateQuickslot()
-        MoorMapAdapter.AttachToButton(self.activeGoQuickslot, self.activeGoBtn)
     end
 
     -- ===== Columna izquierda ("Mapas"/"Titulos") =====
@@ -557,7 +642,14 @@ function QuestSyncWindow:Constructor()
     -- ===== Columna derecha ("Informacion") =====
     self.lblRightHeader = Turbine.UI.Label()
     self.lblRightHeader:SetParent(self.pageBg)
-    self.lblRightHeader:SetPosition(RIGHT_X, RIGHT_HEADER_Y)
+    -- X=260 (no RIGHT_X=279, pedido explicito del usuario: "el texto se
+    -- debe mover un poco a la izquierda para que calse") -- el cartel
+    -- decorativo real de "Informacion" no esta centrado en RIGHT_X/
+    -- RIGHT_W (esa caja es del CONTENIDO, pensada para el pergamino
+    -- entero) sino mas a la izquierda: medido pixel a pixel, el cartel va
+    -- de x=273 a x=548, centro real x=410. Con el mismo ancho (300) que ya
+    -- tenia, X=260 centra el texto en x=410 (260+150).
+    self.lblRightHeader:SetPosition(260, RIGHT_HEADER_Y)
     self.lblRightHeader:SetSize(RIGHT_W, 25)
     self.lblRightHeader:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold18)
     ApplyHeadingStyle(self.lblRightHeader)
@@ -569,7 +661,9 @@ function QuestSyncWindow:Constructor()
     self.lblTitle:SetParent(self.pageBg)
     self.lblTitle:SetPosition(RIGHT_X, RIGHT_TITLE_Y)
     self.lblTitle:SetSize(RIGHT_TITLE_W, RIGHT_TITLE_H)
-    self.lblTitle:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold18)
+    -- Bold24 (no 18, pedido explicito del usuario: "aumentar el tamaño de
+    -- esos textos") -- ver RIGHT_TITLE_H mas arriba, agrandado a juego.
+    self.lblTitle:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold24)
     self.lblTitle:SetForeColor(INK)
     self.lblTitle:SetMultiline(true)
     self.lblTitle:SetText(T("select_item"))
@@ -578,7 +672,8 @@ function QuestSyncWindow:Constructor()
     self.lblDesc:SetParent(self.pageBg)
     self.lblDesc:SetPosition(RIGHT_X, RIGHT_DESC_Y)
     self.lblDesc:SetSize(RIGHT_DESC_W, RIGHT_DESC_H)
-    self.lblDesc:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiqua16)
+    -- Antiqua18 (no 16, mismo pedido) -- ver RIGHT_DESC_H mas arriba.
+    self.lblDesc:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiqua18)
     self.lblDesc:SetForeColor(INK_SECONDARY)
     self.lblDesc:SetMultiline(true)
     self.lblDesc:SetText("")
@@ -593,15 +688,34 @@ function QuestSyncWindow:Constructor()
 
     -- Botones Activar/Completar/Desmarcar -- pedido explicito del usuario
     -- ("los objetivos de las misiones no tiene botones"): vuelven a ser
-    -- Turbine.UI.Lotro.Button reales (como Mapa/Ruta), NO filas de texto
-    -- dentro de la lista como habian quedado. Solo se muestran para
-    -- misiones (self.selectedNdx), nunca para Puntos de Interes/Tropas.
-    local actionBtnW = math.floor((RIGHT_W - 8) / 3)
-    self.btnMarkActive = Turbine.UI.Lotro.Button()
+    -- controles reales (como Mapa/Ruta), NO filas de texto dentro de la
+    -- lista como habian quedado. Solo se muestran para misiones
+    -- (self.selectedNdx), nunca para Puntos de Interes/Tropas.
+    -- 4 en vez de 3 (2026-09-01, pedido explicito del usuario: boton
+    -- "Narrar" tambien en la ventana principal, no solo en el Tracker) --
+    -- se reparte el mismo ancho entre 4 botones en vez de agregar una fila
+    -- nueva, para no correr RIGHT_POINTS_Y_NOMAP (constante fija derivada
+    -- de RIGHT_ACTIONS_H, asumida en todo el resto del layout de abajo).
+    -- V13 (2026-09-04, pedido explicito del usuario: integrar el set de
+    -- botones nuevo -- arte a todo color con el texto ya quemado adentro).
+    -- SIN Quickslot detras (a diferencia de Mapa/Ruta, ver nota grande de
+    -- btnNarrar mas abajo) -- seguro cambiar el TIPO de control aca.
+    --
+    -- V14 (2026-09-04, confirmado en el juego con captura del usuario: los
+    -- 4 botones se veian recortados/rotos -- solo un hilo de texto arriba,
+    -- el resto negro). SetBackground en un Turbine.UI.Control NO reescala
+    -- la imagen para llenar el control -- la dibuja a su resolucion REAL y
+    -- recorta lo que sobra desde la esquina superior izquierda. Cada .tga
+    -- se genera YA al tamaño real de uso -- ACTION_COL_W/ACTION_ROW_H
+    -- tienen que coincidir EXACTO con el tamaño real del archivo, no son
+    -- valores de layout libres para elegir sin regenerar el arte.
+    --
+    -- V15 (2026-09-04, grilla 2x2 en vez de 1 fila -- ver ACTION_COL_W/
+    -- ACTION_ROW_H/ACTION_GAP mas arriba): Activar/Completar arriba,
+    -- Desmarcar/Narrar abajo.
+    self.btnMarkActive = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("activar", ACTION_COL_W, ACTION_ROW_H)
     self.btnMarkActive:SetParent(self.pageBg)
     self.btnMarkActive:SetPosition(RIGHT_X, RIGHT_ACTIONS_Y)
-    self.btnMarkActive:SetSize(actionBtnW, RIGHT_ACTIONS_H)
-    self.btnMarkActive:SetText(T("activate"))
     self.btnMarkActive:SetVisible(false)
     self.btnMarkActive.MouseClick = function()
         if self.selectedNdx then
@@ -610,11 +724,9 @@ function QuestSyncWindow:Constructor()
         end
     end
 
-    self.btnMarkCompleted = Turbine.UI.Lotro.Button()
+    self.btnMarkCompleted = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("completar", ACTION_COL_W, ACTION_ROW_H)
     self.btnMarkCompleted:SetParent(self.pageBg)
-    self.btnMarkCompleted:SetPosition(RIGHT_X + actionBtnW + 4, RIGHT_ACTIONS_Y)
-    self.btnMarkCompleted:SetSize(actionBtnW, RIGHT_ACTIONS_H)
-    self.btnMarkCompleted:SetText(T("complete"))
+    self.btnMarkCompleted:SetPosition(RIGHT_X + ACTION_COL_W + ACTION_GAP, RIGHT_ACTIONS_Y)
     self.btnMarkCompleted:SetVisible(false)
     self.btnMarkCompleted.MouseClick = function()
         if self.selectedNdx then
@@ -623,11 +735,9 @@ function QuestSyncWindow:Constructor()
         end
     end
 
-    self.btnMarkReset = Turbine.UI.Lotro.Button()
+    self.btnMarkReset = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("desmarcar", ACTION_COL_W, ACTION_ROW_H)
     self.btnMarkReset:SetParent(self.pageBg)
-    self.btnMarkReset:SetPosition(RIGHT_X + (actionBtnW + 4) * 2, RIGHT_ACTIONS_Y)
-    self.btnMarkReset:SetSize(actionBtnW, RIGHT_ACTIONS_H)
-    self.btnMarkReset:SetText(T("reset"))
+    self.btnMarkReset:SetPosition(RIGHT_X, RIGHT_ACTIONS_Y + ACTION_ROW_H + ACTION_GAP)
     self.btnMarkReset:SetVisible(false)
     self.btnMarkReset.MouseClick = function()
         if self.selectedNdx then
@@ -636,62 +746,112 @@ function QuestSyncWindow:Constructor()
         end
     end
 
+    -- Boton "Narrar" (2026-09-01, pedido explicito del usuario: el mismo
+    -- boton del Tracker pero disponible para CUALQUIER mision del diario
+    -- principal, no solo las activas). Mismo mecanismo que
+    -- UI/QuestTrackerHUD.lua: NarratorBridge.PlayQuestText escribe el
+    -- pedido para que Narrador_IA (app externa) lo narre.
+    --
+    -- 2026-09-02 (pedido explicito del usuario: "que haga sinergia visual a
+    -- nuestro libros, que sea visualmente tematico"): en vez del
+    -- Turbine.UI.Lotro.Button generico que comparte con Activar/Completar/
+    -- Reiniciar, usa el estilo "tag" de pergamino. Seguro de usar aca
+    -- porque este boton NO lleva Quickslot detras (a diferencia de Mapa/
+    -- Ruta/MoorMap/Waypoint, que SI deben quedar en Turbine.UI.Lotro.Button
+    -- nativo -- ver comentario de CreateIconButtonAlpha en MEMBookStyle.lua).
+    --
+    -- V13 (2026-09-04): tag_cyan generico + label "Narrar" superpuesto ->
+    -- arte propio "narrar" (mismo set nuevo que Activar/Completar/
+    -- Desmarcar, ver nota grande ahi arriba) con el texto ya quemado
+    -- adentro.
+    self.btnNarrar = LQA.UI.MEMBookStyle.CreateIconButtonAlpha("narrar", ACTION_COL_W, ACTION_ROW_H)
+    self.btnNarrar:SetParent(self.pageBg)
+    self.btnNarrar:SetPosition(RIGHT_X + ACTION_COL_W + ACTION_GAP, RIGHT_ACTIONS_Y + ACTION_ROW_H + ACTION_GAP)
+    self.btnNarrar:SetVisible(false)
+    self.btnNarrar.ButtonClicked = function()
+        if self.selectedNdx then
+            local quest = QuestDB.quests[self.selectedNdx]
+            if quest then
+                NarratorBridge.PlayQuestText(self.selectedNdx, quest, GetQuestDisplayName(self.selectedNdx, quest))
+            end
+        end
+    end
+
     self.lblStagesHeader = Turbine.UI.Label()
     self.lblStagesHeader:SetParent(self.pageBg)
     self.lblStagesHeader:SetPosition(RIGHT_X, RIGHT_POINTS_Y_NOMAP)
-    -- Alto 20 (no 16): mismo bug de texto borroso/recortado que
-    -- lblActiveName -- Bold+contorno necesita mas alto real que el que
-    -- tenia esta caja.
-    self.lblStagesHeader:SetSize(RIGHT_W, 20)
-    self.lblStagesHeader:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold14)
+    -- Alto 26/Bold18 (no 20/Bold14, pedido explicito del usuario:
+    -- "aumentar el tamaño de esos textos") -- Bold+contorno necesita mas
+    -- alto real que el que tenia esta caja con la fuente vieja.
+    self.lblStagesHeader:SetSize(RIGHT_W - 92, 26)
+    self.lblStagesHeader:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold18)
     ApplyHeadingStyle(self.lblStagesHeader)
     self.lblStagesHeader:SetVisible(false)
 
-    -- Boton "Ver puntos"/"Ver mapa" -- pedido explicito del usuario ("la
-    -- parte de puntos es demasiado chico... podria ser una subpestaña").
-    -- En vez de una ventana nueva (superficie de riesgo extra -- ver la
-    -- nota grande sobre los 3 cierres reales del juego con ventanas sin
-    -- chrome nativo), esto alterna DENTRO del mismo panel: cuando hay
-    -- mapa, el usuario puede tocar este boton para ocultarlo y que la
-    -- lista de puntos use TODO el alto grande (RIGHT_POINTS_H_NOMAP, el
-    -- mismo que ya usan las misiones sin mapa) en vez del angosto
-    -- RIGHT_POINTS_H_MAP. Solo visible cuando la entrada seleccionada
-    -- tiene mapa real (self.currentHasMap) -- las misiones no lo
-    -- necesitan, ya tienen el alto grande siempre.
-    self.btnTogglePoints = Turbine.UI.Lotro.Button()
-    self.btnTogglePoints:SetParent(self.pageBg)
-    self.btnTogglePoints:SetSize(90, 20)
-    self.btnTogglePoints:SetVisible(false)
-    self.btnTogglePoints.MouseClick = function()
-        self.pointsExpanded = not self.pointsExpanded
-        self:LayoutDetailForMode(self.currentHasMap)
+    -- Boton "Mapa" (2026-09-05, reemplaza la lista embebida con scrollbar
+    -- -- pedido explicito del usuario: "al hacer scroll, corta/clipea
+    -- parte del fondo de pergamino... quiero eliminar ese mecanismo por
+    -- completo"). La lista vieja (self.pointsList) vivia DENTRO del
+    -- pergamino con un fondo que era un RECORTE de pixeles fijo
+    -- (points_bg.tga/points_bg_map.tga, ver historial abajo de
+    -- LayoutDetailForMode) -- scrollear el CONTENIDO sin mover ese
+    -- recorte dejaba un borde recto feo apenas la lista crecia. Este
+    -- boton abre self.pointsPopup en vez de eso: una ventana aparte sin
+    -- ningun fondo de pergamino, asi que no hay NADA que un scroll pueda
+    -- cortar. Reusa el asset mapa.tga/_over.tga/_down.tga (generado en la
+    -- misma tanda que activar/completar/desmarcar/narrar, nunca conectado
+    -- hasta ahora) via MEMBookStyle.CreateIconButton -- mismo mecanismo
+    -- de 3 estados que ya usan las flechas de categoria.
+    -- 88x32 (no 72x26, pedido explicito del usuario: "aumentar el tamaño
+    -- de esos textos y del boton Mapa") -- mismo asset reescalado con
+    -- alfa premultiplicado (evita el halo oscuro documentado en
+    -- CreateIconButtonAlpha) en vez de generar arte nuevo desde cero.
+    self.btnShowPoints = LQA.UI.MEMBookStyle.CreateIconButton("mapa", 88, 32)
+    self.btnShowPoints:SetParent(self.pageBg)
+    self.btnShowPoints:SetVisible(false)
+    self.btnShowPoints.ButtonClicked = function()
+        self:TogglePointsPopup()
     end
 
-    self.pointsList = Turbine.UI.ListBox()
-    self.pointsList:SetParent(self.pageBg)
-    self.pointsList:SetPosition(RIGHT_X, RIGHT_POINTS_Y_NOMAP + 20)
-    self.pointsList:SetSize(RIGHT_W, RIGHT_POINTS_H_NOMAP - 20)
-    -- BUG CORREGIDO (visto en captura con zoom del usuario: "cuadrado
-    -- cortado y pegado", un borde recto visible donde este relleno no
-    -- calzaba con el degrade real del pergamino): el primer recorte
-    -- (points_bg.tga v1) era un rectangulo GENERICO de pergamino plano
-    -- (sin degrade), asi que se notaba la costura contra el degrade real
-    -- de alrededor apenas la lista se alejaba del punto exacto donde se
-    -- habia recortado. Ahora se recorta la posicion EXACTA en pixeles
-    -- donde cae self.pointsList en cada modo (self.pointsList:SetBackground
-    -- se llama de nuevo en LayoutDetailForMode segun showMap) -- al ser
-    -- literalmente los mismos pixeles reales que hay debajo, no puede
-    -- haber costura por definicion. Texture inicial aca = modo sin mapa
-    -- (el mas comun, misiones); LayoutDetailForMode la cambia si hace
-    -- falta.
-    self.pointsList:SetBackground(BOOK_RES .. "points_bg.tga")
+    -- Ventana popup con la lista completa de puntos (Punto 1/2/3... +
+    -- Mapa/Ruta de cada uno). Turbine.UI.Lotro.Window (chrome NATIVO), NO
+    -- un Turbine.UI.Window a secas: los botones Mapa/Ruta de cada fila
+    -- (AddDetailPointRow mas abajo) son Turbine.UI.Lotro.Button REALES
+    -- con Quickslot detras -- exactamente la combinacion (boton nativo +
+    -- ventana sin skin de Lotro) que ya causo 3 cierres reales del juego
+    -- en este addon (ver la nota grande en QuestBookWindow.lua). Con
+    -- chrome nativo esa combinacion nunca crasheo -- misma regla aca.
+    --
+    -- A proposito SIN fondo de pergamino (self.pointsList queda sin
+    -- SetBackground/SetBackColor): al no haber ningun recorte de pixeles
+    -- de por medio, no existe nada que el scroll pueda cortar/clipear --
+    -- pedido explicito del usuario ("no debe recortar ni clipear el
+    -- fondo de pergamino en ningun punto").
+    --
+    -- Se cierra con el boton Mapa de nuevo (toggle) o con la X nativa de
+    -- su propio chrome. Cerrar con click AFUERA de la ventana (tambien
+    -- pedido) NO esta implementado: la unica forma de detectarlo en este
+    -- SDK es un control invisible a pantalla completa capturando clicks
+    -- -- una superficie nueva y nunca probada en este addon, de la misma
+    -- familia que causo los 3 cierres reales de arriba. Se prefirio no
+    -- arriesgar estabilidad por esta interaccion secundaria.
+    self.pointsPopup = Turbine.UI.Lotro.Window()
+    self.pointsPopup:SetSize(POPUP_W, POPUP_H)
+    self.pointsPopup:SetText(T("points_header"))
+    self.pointsPopup:SetVisible(false)
 
-    self.pointsScroll = Turbine.UI.Lotro.ScrollBar()
-    self.pointsScroll:SetOrientation(Turbine.UI.Orientation.Vertical)
-    self.pointsScroll:SetParent(self.pageBg)
-    self.pointsScroll:SetPosition(RIGHT_SCROLL_X, RIGHT_POINTS_Y_NOMAP + 20)
-    self.pointsScroll:SetSize(10, RIGHT_POINTS_H_NOMAP - 20)
-    self.pointsList:SetVerticalScrollBar(self.pointsScroll)
+    self.pointsList = Turbine.UI.ListBox()
+    self.pointsList:SetParent(self.pointsPopup)
+    self.pointsList:SetPosition(8, 30)
+    self.pointsList:SetSize(POPUP_W - 34, POPUP_H - 38)
+    self.pointsRowCount = 0
+
+    self.pointsPopupScroll = Turbine.UI.Lotro.ScrollBar()
+    self.pointsPopupScroll:SetOrientation(Turbine.UI.Orientation.Vertical)
+    self.pointsPopupScroll:SetParent(self.pointsPopup)
+    self.pointsPopupScroll:SetPosition(POPUP_W - 22, 30)
+    self.pointsPopupScroll:SetSize(10, POPUP_H - 38)
+    self.pointsList:SetVerticalScrollBar(self.pointsPopupScroll)
 
     -- Botones generales (Mapa/Ruta): apuntan al primer lugar conocido
     -- (mision O punto). Turbine.UI.Lotro.Button nativo con Quickslot real
@@ -699,13 +859,16 @@ function QuestSyncWindow:Constructor()
     self.btnMap = Turbine.UI.Lotro.Button()
     self.btnMap:SetParent(self.pageBg)
     self.btnMap:SetPosition(RIGHT_X, RIGHT_BTN_Y)
-    self.btnMap:SetSize(90, 26)
+    -- Alto 32 (no 26, pedido explicito del usuario -- ver la nota grande
+    -- junto a RIGHT_BTN_Y): boton nativo, se reescala solo sin regenerar
+    -- arte (a diferencia de los iconos custom de MEMBookStyle).
+    self.btnMap:SetSize(90, 32)
     self.btnMap:SetText("MoorMap")
 
     self.btnWay = Turbine.UI.Lotro.Button()
     self.btnWay:SetParent(self.pageBg)
     self.btnWay:SetPosition(RIGHT_X + 96, RIGHT_BTN_Y)
-    self.btnWay:SetSize(90, 26)
+    self.btnWay:SetSize(90, 32)
     self.btnWay:SetText("Waypoint")
 
     if MoorMapAdapter then
@@ -757,10 +920,17 @@ function QuestSyncWindow:Constructor()
     LQA.Core.EventBus:Subscribe("QUEST_PROGRESS", OnQuestEvent)
     LQA.Core.EventBus:Subscribe("QUEST_TRACKED", OnQuestEvent)
 
+    -- SFX de "abrir ventana" RETIRADO (pedido explicito del usuario,
+    -- 2026-09-03) -- ver la nota grande en NarratorBridge.lua.
     self.VisibleChanged = function()
         if self:IsVisible() and self.pendingRepopulate then
             self.pendingRepopulate = false
             self:PopulateList()
+        end
+        -- Si se cierra la ventana principal, el popup de puntos no puede
+        -- quedar huerfano flotando solo en pantalla.
+        if not self:IsVisible() then
+            self.pointsPopup:SetVisible(false)
         end
     end
 
@@ -773,7 +943,6 @@ function QuestSyncWindow:RefreshLanguage()
     self.btnLanguage:SetText(T("lang_btn"))
     self:UpdateCategoryChrome()
     self.lblRightHeader:SetText(T("right_header_info"))
-    self.activeGoBtn:SetText(T("go"))
 
     self:PopulateList()
     self:ClearDetailPanel()
@@ -790,42 +959,13 @@ function QuestSyncWindow:UpdateCategoryChrome()
     self.btnPageRight:SetVisible(self.categoryIndex < #TABS)
 end
 
+-- Banda de mision activa/rastreada (nombre+progreso+boton "Ir") ELIMINADA
+-- (pedido explicito del usuario, 2026-09-05: "no deberia mostrarse ahi" /
+-- "no hace falta ahi") -- flotaba sobre la madera debajo del cartel
+-- "QuestSync" y el boton "Ir" se superponia con su propia etiqueta de
+-- atajo. Se deja el metodo como no-op en vez de borrarlo y tocar los 4
+-- call sites (OnQuestEvent, RefreshLanguage, Constructor, SelectQuest).
 function QuestSyncWindow:UpdateActiveSummary()
-    local trackedNdx = QuestStateManager.GetTrackedQuest()
-    local quest = trackedNdx and QuestDB.quests[trackedNdx]
-    if not quest then
-        self.lblActiveName:SetText(T("no_active_quest"))
-        self.activeBadge:SetVisible(false)
-        self.activeGoBtn:SetVisible(false)
-        return
-    end
-
-    local esName = GetQuestDisplayName(trackedNdx, quest)
-    local state = QuestStateManager.GetQuestState(trackedNdx)
-    self.activeBadge:SetVisible(true)
-    self.activeBadge:SetBackColor(StateColor(state))
-
-    local suffix = ""
-    if state == "ACTIVE" then
-        local prog = QuestStateManager.GetQuestProgress(trackedNdx)
-        suffix = prog ~= "" and ("  (" .. prog .. ")") or ("  (" .. T("active_state") .. ")")
-    elseif state == "COMPLETED" then
-        suffix = "  (" .. T("completed_state") .. ")"
-    end
-    self.lblActiveName:SetText(esName .. suffix)
-
-    local firstLoc = MoorMapAdapter.ResolveQuestLoc(trackedNdx, quest)
-    if firstLoc and self.activeGoQuickslot then
-        self.activeGoBtn:SetVisible(true)
-        local ns, ew = MoorMapAdapter.ParseCoord(firstLoc)
-        MoorMapAdapter.SetQuestMarker(self.activeGoQuickslot, {
-            mapID = MoorMapAdapter.ResolveMapID(quest),
-            ns = ns or 0, ew = ew or 0,
-            name = string.gsub(esName, ":", "-"), description = "Objetivo"
-        })
-    else
-        self.activeGoBtn:SetVisible(false)
-    end
 end
 
 -- Fila de sub-grupo desplegable "+ Etiqueta {N}" -- pedido explicito del
@@ -1095,47 +1235,62 @@ end
 -- pergamino real (ver la nota grande junto a RIGHT_BOTTOM_LIMIT) -- eso ya
 -- no cambia entre mision y punto de interes, asi que aca solo se
 -- reposiciona lo que SI cambia: el mapa (misiones no tienen mapa interno
--- de WarbandsSlayer, asi que la lista de puntos sube a ocupar ese
--- espacio; puntos de interes/amenazas si lo usan, a tamaño completo
--- 300x200) y el estado del boton "Ver puntos"/"Ver mapa".
+-- de WarbandsSlayer, asi que el encabezado "Objetivo de la Mision"/boton
+-- Mapa suben a ocupar ese espacio; puntos de interes/amenazas si lo usan,
+-- a tamaño completo 300x200, y el encabezado/boton bajan debajo).
 --
--- BUG VISUAL CORREGIDO (pedido explicito del usuario: "puede ser que solo
--- al cliquear ver puntos recien aparescan... se ve mal con estos 2
--- abiertos sinergicamente"): antes, con mapa visible, la lista de puntos
--- IGUAL se mostraba (angosta, compartiendo espacio) -- las dos cosas a la
--- vez se veian recargadas. Ahora con mapa hay SOLO el mapa + el boton "Ver
--- puntos"; la lista/encabezado quedan ocultos hasta tocarlo (self.
--- showPointsSection, que SelectQuest/SelectPoi combinan con si hay
--- contenido real que mostrar).
+-- 2026-09-05 (pedido explicito del usuario, ver la nota grande junto a
+-- self.pointsPopup en el Constructor): ya NO hay boton "Ver puntos"/"Ver
+-- mapa" ni lista embebida que alternar -- el mapa (si existe) se muestra
+-- SIEMPRE, y el detalle completo de puntos vive en self.pointsPopup,
+-- abierto con self.btnShowPoints. Su visibilidad real la decide
+-- QuestSyncWindow:UpdatePointsButtonVisibility() DESPUES de poblar
+-- self.pointsList (SelectQuest/SelectPoi) -- aca solo se arrancan
+-- ocultos y se los posiciona, para no mostrar contenido de la seleccion
+-- anterior mientras se arma la nueva.
 function QuestSyncWindow:LayoutDetailForMode(hasMap)
     self.currentHasMap = hasMap
-    -- self.pointsExpanded solo importa si HAY mapa para ocultar -- sin
-    -- mapa la lista ya tiene el alto grande siempre, no hace falta boton.
-    local showMap = hasMap and not self.pointsExpanded
-    self.showPointsSection = not showMap
-    self.mapImage:SetVisible(showMap)
-    self.pointsList:SetVisible(self.showPointsSection)
-    self.pointsScroll:SetVisible(self.showPointsSection)
-    self.btnTogglePoints:SetVisible(hasMap)
-    self.btnTogglePoints:SetText(self.pointsExpanded and T("view_map") or T("view_points"))
+    self.mapImage:SetVisible(hasMap)
+    self.lblStagesHeader:SetVisible(false)
+    self.btnShowPoints:SetVisible(false)
 
-    local headerY = showMap and RIGHT_POINTS_Y_MAP or RIGHT_POINTS_Y_NOMAP
-    local listH = (showMap and RIGHT_POINTS_H_MAP or RIGHT_POINTS_H_NOMAP) - 20
-    -- El fondo de la lista tiene que ser el recorte que corresponde a
-    -- DONDE cae ahora (ver la nota grande junto a self.pointsList arriba)
-    -- -- son 2 imagenes distintas segun el modo, no 1 sola que se estira.
-    self.pointsList:SetBackground(BOOK_RES .. (showMap and "points_bg_map.tga" or "points_bg.tga"))
-    self.btnTogglePoints:SetPosition(RIGHT_X + RIGHT_W - 90, headerY)
+    local headerY = hasMap and RIGHT_POINTS_Y_MAP or RIGHT_POINTS_Y_NOMAP
     self.lblStagesHeader:SetPosition(RIGHT_X, headerY)
-    self.pointsList:SetPosition(RIGHT_X, headerY + 20)
-    self.pointsList:SetHeight(listH)
-    self.pointsScroll:SetPosition(RIGHT_SCROLL_X, headerY + 20)
-    self.pointsScroll:SetHeight(listH)
+    self.btnShowPoints:SetPosition(RIGHT_X + RIGHT_W - 88, headerY - 3)
+end
+
+-- Boton Mapa/encabezado "Objetivo de la Mision:"/"Puntos:" solo aparecen
+-- si de verdad hay algo para mostrar en el popup -- self.pointsRowCount
+-- lo incrementan AddDetailPointRow/AddRewardRow/AddDetailSeparatorRow, se
+-- resetea a 0 en cada self.pointsList:ClearItems() (SelectQuest/SelectPoi/
+-- ClearDetailPanel). Llamar DESPUES de terminar de poblar la seleccion.
+function QuestSyncWindow:UpdatePointsButtonVisibility()
+    local hasContent = self.pointsRowCount > 0
+    self.lblStagesHeader:SetVisible(hasContent)
+    self.btnShowPoints:SetVisible(hasContent)
+    if not hasContent then
+        self.pointsPopup:SetVisible(false)
+    end
+end
+
+-- Abre/cierra self.pointsPopup (boton "Mapa"). Se reposiciona cada vez
+-- que se abre, pegado al costado derecho de la ventana principal --
+-- sigue a self por si el usuario la arrastro desde la ultima vez.
+function QuestSyncWindow:TogglePointsPopup()
+    if self.pointsPopup:IsVisible() then
+        self.pointsPopup:SetVisible(false)
+        return
+    end
+    local wx, wy = self:GetPosition()
+    self.pointsPopup:SetPosition(wx + WIDTH + 6, wy + CHROME_TOP)
+    self.pointsPopup:SetVisible(true)
 end
 
 -- Cambia de categoria (ver TABS/self.categoryIndex). Repuebla la lista y
 -- limpia el panel de detalle.
 function QuestSyncWindow:SelectTab(key)
+    -- SFX de "cambio de pestaña" RETIRADO (pedido explicito del usuario,
+    -- 2026-09-03) -- ver la nota grande en NarratorBridge.lua.
     for i, tab in ipairs(TABS) do
         if tab.key == key then self.categoryIndex = i end
     end
@@ -1253,17 +1408,15 @@ function QuestSyncWindow:ClearDetailPanel()
     self.lblDesc:SetText("")
     self:ClearMapMarkers()
     self.pointsList:ClearItems()
-    self.pointsList:SetVisible(false)
-    self.pointsScroll:SetVisible(false)
+    self.pointsRowCount = 0
+    self.pointsPopup:SetVisible(false)
     self.lblStagesHeader:SetVisible(false)
+    self.btnShowPoints:SetVisible(false)
     self.mapImage:SetVisible(false)
-    self.btnTogglePoints:SetVisible(false)
     self.btnMarkActive:SetVisible(false)
     self.btnMarkCompleted:SetVisible(false)
     self.btnMarkReset:SetVisible(false)
-    -- Cada nueva seleccion arranca mostrando el mapa (si tiene) -- que no
-    -- quede "expandido" de la mision/punto anterior.
-    self.pointsExpanded = false
+    self.btnNarrar:SetVisible(false)
 end
 
 -- Fila de separador de solo texto (usada para "Recompensas:" dentro de la
@@ -1282,11 +1435,16 @@ function QuestSyncWindow:AddDetailSeparatorRow(text)
     lbl:SetMouseVisible(false)
 
     self.pointsList:AddItem(item)
+    self.pointsRowCount = self.pointsRowCount + 1
 end
 
 function QuestSyncWindow:SelectQuest(ndx)
     local quest = QuestDB.quests[ndx]
     if not quest then return end
+
+    -- Sin SFX de click (pedido explicito del usuario, 2026-09-03: "solo
+    -- deben ir los sonidos que yo entregue como mp3" -- no hay mp3 real de
+    -- click de fila).
 
     self.selectedNdx = ndx
     self.selectedPoi = nil
@@ -1333,23 +1491,25 @@ function QuestSyncWindow:SelectQuest(ndx)
     end
 
     self.pointsList:ClearItems()
+    self.pointsRowCount = 0
 
     -- Botones Activar/Completar/Desmarcar reales (pedido explicito del
     -- usuario: "los objetivos de las misiones no tiene botones" -- antes
     -- eran filas de texto dentro de la lista). self.selectedNdx ya quedo
     -- seteado arriba; sus MouseClick (definidos una sola vez en el
     -- Constructor) lo leen directo, no hace falta pasarles ndx aca.
-    -- SetText de nuevo aca (no solo en el Constructor): sin esto, un
-    -- cambio de idioma despues de armar la ventana dejaria estos 3
-    -- botones con el texto viejo -- Mapa/Ruta ya evitan este problema
-    -- porque se recrean en cada seleccion (AddDetailPointRow), estos 3
-    -- botones son persistentes.
-    self.btnMarkActive:SetText(T("activate"))
+    -- V13 (2026-09-04): ya NO hay SetText aca. Con el arte nuevo (texto
+    -- quemado en la imagen, ver Constructor) estos 3 botones son
+    -- Turbine.UI.Control (CreateIconButtonAlpha), que no tiene metodo
+    -- SetText -- llamarlo tiraria un error de Lua. Efecto secundario
+    -- ACEPTADO (pedido explicito del usuario de integrar este arte tal
+    -- cual, sin pedirle una version en ingles): Activar/Completar/
+    -- Desmarcar/Narrar quedan fijos en español, ya no seguian el cambio de
+    -- idioma ES/EN como antes.
     self.btnMarkActive:SetVisible(true)
-    self.btnMarkCompleted:SetText(T("complete"))
     self.btnMarkCompleted:SetVisible(true)
-    self.btnMarkReset:SetText(T("reset"))
     self.btnMarkReset:SetVisible(true)
+    self.btnNarrar:SetVisible(true)
 
     -- BUG CORREGIDO (visto en captura del usuario, sesion anterior): el
     -- encabezado "Objetivo de la Mision:" se dibujaba DOS veces -- una vez
@@ -1359,13 +1519,13 @@ function QuestSyncWindow:SelectQuest(ndx)
     -- Puntos de Interes/Tropas (SelectPoi nunca duplico el suyo).
     local mapID = MoorMapAdapter.ResolveMapID(quest)
     self.lblStagesHeader:SetText(T("mission_objective"))
-    self.lblStagesHeader:SetVisible(stages ~= nil and #stages > 0)
     if stages then
         for _, stage in ipairs(stages) do
             local stageName = LocalizedText(stage.nameES, stage.name)
             self:AddDetailPointRow("- " .. stageName, stage.loc, esName, mapID)
         end
     end
+    self:UpdatePointsButtonVisibility()
 end
 
 -- BUG CORREGIDO (visto en captura del usuario: nombres largos como "El
@@ -1435,6 +1595,7 @@ function QuestSyncWindow:AddDetailPointRow(desc, loc, ownerName, mapID)
     end
 
     self.pointsList:AddItem(item)
+    self.pointsRowCount = self.pointsRowCount + 1
 end
 
 function QuestSyncWindow:AddRewardRow(text)
@@ -1452,6 +1613,7 @@ function QuestSyncWindow:AddRewardRow(text)
     lbl:SetMouseVisible(false)
 
     self.pointsList:AddItem(item)
+    self.pointsRowCount = self.pointsRowCount + 1
 end
 
 function QuestSyncWindow:SelectPoi(entry, icon)
@@ -1463,6 +1625,7 @@ function QuestSyncWindow:SelectPoi(entry, icon)
     self.btnMarkActive:SetVisible(false)
     self.btnMarkCompleted:SetVisible(false)
     self.btnMarkReset:SetVisible(false)
+    self.btnNarrar:SetVisible(false)
 
     local esName = DisplayName(entry)
     self.lblTitle:SetText(esName)
@@ -1474,6 +1637,7 @@ function QuestSyncWindow:SelectPoi(entry, icon)
 
     self:ClearMapMarkers()
     self.pointsList:ClearItems()
+    self.pointsRowCount = 0
 
     local groups = GetGroupsFor(entry)
     local group = groups[1]
@@ -1486,10 +1650,6 @@ function QuestSyncWindow:SelectPoi(entry, icon)
     end
 
     self.lblStagesHeader:SetText(T("points_header"))
-    -- self.showPointsSection: falso cuando el mapa esta visible (ver
-    -- LayoutDetailForMode) -- el encabezado "Puntos:" solo se muestra
-    -- junto con la lista, nunca solo.
-    self.lblStagesHeader:SetVisible(self.showPointsSection)
 
     local mapID = MoorMapAdapter.ResolveMapID({ area = (bounds and bounds.name) or entry.area or entry.zone })
     if group and group.coords[1] then
@@ -1562,4 +1722,5 @@ function QuestSyncWindow:SelectPoi(entry, icon)
             self:AddRewardRow(rtext)
         end
     end
+    self:UpdatePointsButtonVisibility()
 end

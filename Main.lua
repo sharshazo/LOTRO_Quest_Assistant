@@ -64,6 +64,8 @@ _G.QuestLocES = _G.QuestLocalization_Full
 
 -- 3. Load Core Managers
 import "LOTRO_Quest_Assistant.Core.QuestLocResolver"
+import "LOTRO_Quest_Assistant.Core.NarratorBridge"
+import "LOTRO_Quest_Assistant.Core.NarratorMute"
 import "LOTRO_Quest_Assistant.Core.QuestStateManager"
 import "LOTRO_Quest_Assistant.Core.QuestEventParser"
 import "LOTRO_Quest_Assistant.Core.LanguageSettings"
@@ -258,7 +260,7 @@ local function OnChatReceived(sender, args)
     
     -- Ignore our own debug messages to avoid infinite loops
     if string.find(message, "QuestSync:") or string.find(message, "<rgb=") then return end
-    
+
     if chatType == Turbine.ChatType.Quest then
         if LQA.Debug.Enabled then
             Turbine.Shell.WriteLine("<rgb=#00FFFF>QuestSync RAW CHAT (Quest): " .. message .. "</rgb>")
