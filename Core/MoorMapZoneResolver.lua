@@ -26,31 +26,39 @@ _G.MoorMapZoneResolver = {}
 -- (GaranStuff/MoorMap/Defaults.lua, tmpMapInfo[370] "mossward") trae
 -- MinNS=60.98 > MaxNS=-60.35 -- limites invertidos en la FUENTE original, no
 -- un error nuestro de extraccion (Data/MoorMapZones.lua copia ese dato tal
--- cual, como debe ser). Con la comparacion directa de antes (ns>=minNS and
--- ns<=maxNS) esa zona queda matematicamente MUERTA -- ningun ns satisface
--- ambas condiciones a la vez -- asi que un punto capturado ahi nunca
--- matchea esta zona y cae en la de mayor tier siguiente que SI lo contenga
--- (ej. la region entera), guardando el loc con el mapa equivocado sin
--- ningun aviso. Se normaliza min/max aca (nunca se asume que el dato de
--- origen viene bien ordenado) para que esto no pueda volver a pasar, sin
--- tener que adivinar/corregir el valor exacto de Mossward a mano.
-local function NormalizedRange(a, b)
-    if a <= b then return a, b end
-    return b, a
-end
-
+-- cual, como debe ser).
+--
+-- INTENTO 1 (revertido, causo un bug PEOR -- confirmado en vivo 2026-09-07
+-- con captura real: un punto en Eregion se guardo como "Musgovilla" /
+-- Mossward): normalizar min/max (intercambiarlos si minNS>maxNS) asumiendo
+-- que solo estaban invertidos por una transcripcion al reves. Eso funciona
+-- SOLO si los 2 valores son parecidos en magnitud -- aca no lo son
+-- (60.98 vs -60.35), asi que el rango "normalizado" quedo de -60.35 a
+-- +60.98 -- una franja de mas de 120 unidades de NS que cubre casi medio
+-- mapa, tragandose zonas reales enteras (Eregion, tier 3) porque Mossward
+-- tiene tier 4 (mas especifico) y gana el desempate.
+--
+-- FIX REAL: no se puede saber CUAL de los 2 valores es el que esta mal sin
+-- una fuente externa que lo confirme -- adivinar cualquiera de las 2
+-- direcciones (usar tal cual, o normalizar) puede fabricar una caja
+-- gigante incorrecta. Lo unico seguro es DESCARTAR la zona de la
+-- comparacion cuando sus limites no tienen sentido (min > max en cualquier
+-- eje) -- vuelve a quedar "muerta" (nunca gana un match), que es mucho
+-- menos daFino que ganar matches que no le corresponden: un punto real
+-- cerca de Mossward cae en la region padre (correcto a nivel de zona
+-- amplia, solo pierde el zoom especifico), en vez de robarle puntos a
+-- CUALQUIER zona que se cruce con la caja fabricada.
 function MoorMapZoneResolver.Resolve(region, ns, ew)
     if region == nil or ns == nil or ew == nil or _G.MoorMapZones == nil then return nil end
 
     local best = nil
     for _, entry in ipairs(MoorMapZones) do
-        if entry.region == region and entry.hFactor ~= 0 and entry.vFactor ~= 0 then
-            local lowNS, highNS = NormalizedRange(entry.minNS, entry.maxNS)
-            local lowEW, highEW = NormalizedRange(entry.minEW, entry.maxEW)
-            if ns >= lowNS and ns <= highNS and ew >= lowEW and ew <= highEW then
-                if best == nil or (entry.tier or 0) > (best.tier or 0) then
-                    best = entry
-                end
+        if entry.region == region and entry.hFactor ~= 0 and entry.vFactor ~= 0 and
+            entry.minNS <= entry.maxNS and entry.minEW <= entry.maxEW and
+            ns >= entry.minNS and ns <= entry.maxNS and
+            ew >= entry.minEW and ew <= entry.maxEW then
+            if best == nil or (entry.tier or 0) > (best.tier or 0) then
+                best = entry
             end
         end
     end

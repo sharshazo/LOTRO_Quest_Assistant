@@ -114,10 +114,38 @@ end
 
 -- Separa una cantidad al frente ("2 Bloques de mineral de cobre" -> "Bloques
 -- de mineral de cobre") -- GatherNodesDB.byItem esta indexado por el nombre
--- SIN cantidad.
+-- SIN cantidad. Ya no se usa para detectar el item (ver FindItemMatch), pero
+-- se deja por si algun llamador externo la necesita.
 local function StripQuantity(text)
     local rest = string.match(text, "^%d+%s+(.+)$")
     return rest or text
+end
+
+-- BUG REAL encontrado en vivo (2026-09-07, con diagnostico byte-a-byte):
+-- PATTERNS.ITEM asumia que "Has adquirido: [X]." era el mensaje CRUDO
+-- completo -- pero el mensaje real que le llega a Lua NO es texto plano: un
+-- item adquirido en LOTRO es un link clickeable con metadatos incrustados
+-- (confirmado con el diagnostico: un mensaje que se ve como "Has adquirido:
+-- [Racimo de arándanos]." (38 caracteres visibles) media en realidad 204
+-- bytes, terminando en "...ItemInstance>.\n" -- el corchete "[...]" que se
+-- VE en el chat es solo como el cliente RENDERIZA ese link, no lo que hay
+-- en el string real). Por eso el patron anclado a "%]%.?%s*$" nunca
+-- coincidia con NINGUN item, sin importar cual. En vez de asumir un formato
+-- exacto que resulto ser incorrecto, se busca directamente si alguno de los
+-- nombres YA REGISTRADOS en GatherNodesDB.byItem aparece como substring en
+-- cualquier parte del mensaje (string.find plano, sin patron, para no
+-- pelear con caracteres especiales en los nombres) -- funciona sin importar
+-- que metadatos rodeen al nombre. Se prefiere el nombre MAS LARGO que
+-- matchee (ej. "Gota de miel fina de trébol" sobre "Gota de miel") para no
+-- confundir un item mas especifico con uno generico que es substring suyo.
+local function FindItemMatch(message)
+    local bestName, bestEntry, bestLen = nil, nil, 0
+    for name, entry in pairs(_G.GatherNodesDB.byItem) do
+        if #name > bestLen and string.find(message, name, 1, true) ~= nil then
+            bestName, bestEntry, bestLen = name, entry, #name
+        end
+    end
+    return bestName, bestEntry
 end
 
 -- Ultimo nodo detectado por la linea "Tomando los contenidos de X..." --
@@ -180,12 +208,26 @@ function GatherEventParser.ParseMessage(sender, message)
         return true
     end
 
-    local itemTextRaw = string.match(message, PATTERNS.ITEM)
-    if itemTextRaw ~= nil then
-        local itemName = StripQuantity(itemTextRaw)
-        local entry = _G.GatherNodesDB.byItem[itemName]
+    if string.sub(message, 1, 14) == "Has adquirido:" then
+        local itemName, entry = FindItemMatch(message)
         if entry ~= nil then
-            if pendingNode ~= nil and pendingItems ~= nil then
+            -- BUG REAL encontrado en vivo (2026-09-07, reportado por el
+            -- usuario probando varios items seguidos -- miel funciono/no se
+            -- confirmo, y DESPUES frambuesas y patata dejaron de disparar
+            -- por completo): un pendingNode disparado por un item (ver mas
+            -- abajo) que el jugador nunca termina de confirmar con /loc (por
+            -- ejemplo cierra el popup con la "X", que solo lo esconde, no
+            -- limpia el estado -- ver GatherCaptureButton.lua) se quedaba
+            -- PEGADO indefinidamente -- cualquier item nuevo, de CUALQUIER
+            -- profesion, solo se acumulaba en silencio al pendiente viejo
+            -- en vez de disparar un aviso nuevo, porque la condicion de
+            -- abajo solo miraba "pendingNode ~= nil", nunca su antiguedad.
+            -- Se agrega el mismo criterio de PENDING_TIMEOUT_SECONDS que ya
+            -- usa ConsumePendingGather: un pendiente mas viejo que eso se
+            -- trata como si no existiera, y el item actual dispara fresco.
+            local pendingIsStale = pendingNodeTime ~= nil and
+                (Turbine.Engine.GetGameTime() - pendingNodeTime) > PENDING_TIMEOUT_SECONDS
+            if pendingNode ~= nil and pendingItems ~= nil and not pendingIsStale then
                 table.insert(pendingItems, itemName)
             else
                 -- BUG REAL encontrado en vivo (2026-09-07): apicultura
@@ -195,9 +237,10 @@ function GatherEventParser.ParseMessage(sender, message)
                 -- fina de trebol" y "Racimo de arandanos" llegando SOLOS,
                 -- sin nodo previo detectado, y la ventana de guardar nunca
                 -- aparecia porque el flujo entero dependia de esa linea de
-                -- nodo. Si el item se reconoce pero no hay un nodo pendiente
-                -- activo, el item MISMO dispara la captura (mismo patron que
-                -- el nodo: pendingNode/pendingItems/pendingNodeTime +
+                -- nodo. Si el item se reconoce y no hay un nodo pendiente
+                -- activo (o el que habia ya expiro, ver arriba), el item
+                -- MISMO dispara la captura (mismo patron que el nodo:
+                -- pendingNode/pendingItems/pendingNodeTime +
                 -- GATHER_NODE_DETECTED) usando el nombre de nodo que ya trae
                 -- la propia entrada (entry.node, ver register()) -- asi
                 -- cualquier tipo de recoleccion que no siga el patron
@@ -283,4 +326,14 @@ function GatherEventParser.ConsumePendingGather()
     end
 
     return _ResolveMoreSpecificEntry(node, items), items
+end
+
+-- Escape hatch inmediato (2026-09-07, ver nota grande junto al bloque de
+-- ITEM mas arriba): permite limpiar el pendiente sin esperar los 90s del
+-- timeout -- se llama desde el boton "X" de GatherCaptureButton.lua, que
+-- antes solo escondia la ventana y dejaba el estado interno pegado.
+function GatherEventParser.CancelPending()
+    pendingNode = nil
+    pendingItems = nil
+    pendingNodeTime = nil
 end

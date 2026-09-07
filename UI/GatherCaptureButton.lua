@@ -61,6 +61,14 @@ function LQA.UI.GatherCaptureButton:Constructor()
     self.btnClose:SetSize(20, 20)
     self.btnClose:SetText("X")
     self.btnClose.MouseClick = function()
+        -- BUG REAL (2026-09-07): esto solo escondia la ventana -- el
+        -- pendingNode interno de GatherEventParser.lua quedaba pegado hasta
+        -- 90s (ver PENDING_TIMEOUT_SECONDS), bloqueando en silencio que
+        -- cualquier item NUEVO (de cualquier profesion) volviera a disparar
+        -- este mismo boton. Ahora limpia tambien el estado interno.
+        if _G.GatherEventParser then
+            GatherEventParser.CancelPending()
+        end
         self:SetVisible(false)
     end
 

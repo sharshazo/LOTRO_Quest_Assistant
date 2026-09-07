@@ -46,6 +46,15 @@ LQA.Debug = LQA.Debug or {}
 -- "siempre visibles" (no gateados) mientras se validaba el flujo end-to-end
 -- ahora tambien quedan detras de este flag, ver GatherEventParser.lua,
 -- GatherPointsStore.lua y LocationAdapter.lua.
+-- Vuelto a false (2026-09-07, tercera vez el mismo dia): la causa real de
+-- "el item no dispara el popup" se encontro con el diagnostico byte-a-byte
+-- -- los items adquiridos en LOTRO son links clickeables con metadatos
+-- incrustados, no texto plano ("Has adquirido: [X]." visible medía 204
+-- bytes reales) -- GatherEventParser.lua ahora busca el nombre del item
+-- como substring en vez de asumir un formato exacto. Confirmado funcionando
+-- en vivo (captura real: "GatherSync: punto nuevo guardado -> Campo de
+-- arándanos"). El bug de mapa equivocado (Mossward/Musgovilla) tambien se
+-- encontro y corrigio en MoorMapZoneResolver.lua.
 LQA.Debug.Enabled = false
 
 LQA.Core.EventBus = {
