@@ -64,11 +64,6 @@ local WINDOW_H_MIN_EXTRA = 150 -- alto minimo del viewport de mapa
 -- guardado ya funciona bien) -- con el mapa a tamano nativo los iconos de 24
 -- tapaban demasiado detalle del mapa real.
 local MARKER_SIZE = 16
--- Halo/borde resaltante detras del icono al pasar el mouse (mismo pedido) --
--- un Control mas grande con color de fondo, oculto por defecto, tipo
--- "glow" -- no un borde real (Turbine.UI.Label no soporta bordes nativos),
--- pero visualmente cumple lo pedido.
-local HIGHLIGHT_PADDING = 4
 local ROW_HEIGHT = 30
 
 local PROFESSIONS = {
@@ -485,26 +480,10 @@ function LQA.UI.GatherWindow:RefreshMap()
     for _, point in ipairs(points) do
         local px, py = MoorMapZoneResolver.ToPixel(zone, point.ns, point.ew)
         if px ~= nil then
-            -- Halo resaltante: un Control MAS GRANDE, detras del icono
-            -- (ZOrder menor), oculto por defecto -- se muestra al pasar el
-            -- mouse por encima del marcador (mismo evento MouseHover/Leave
-            -- de abajo, no uno propio -- el halo no recibe mouse el mismo,
-            -- solo se prende/apaga desde el marcador).
-            local highlightSize = MARKER_SIZE + (HIGHLIGHT_PADDING * 2)
-            local highlight = Turbine.UI.Control()
-            highlight:SetParent(self.mapControl)
-            highlight:SetSize(highlightSize, highlightSize)
-            highlight:SetPosition(px - (highlightSize / 2), py - (highlightSize / 2))
-            highlight:SetBackColor(Turbine.UI.Color(1, 0.85, 0.3, 0.55))
-            highlight:SetZOrder(1)
-            highlight:SetVisible(false)
-            highlight:SetMouseVisible(false)
-
             local marker = Turbine.UI.Label()
             marker:SetParent(self.mapControl)
             marker:SetSize(MARKER_SIZE, MARKER_SIZE)
             marker:SetPosition(px - (MARKER_SIZE / 2), py - (MARKER_SIZE / 2))
-            marker:SetZOrder(2)
             -- BlendMode.Overlay -- MISMO tratamiento que MoorMap le da a
             -- CUALQUIER icono .tga chico dibujado encima de otra cosa
             -- (confirmado en su propio codigo real: Overlays/RT/Script.lua
@@ -520,19 +499,23 @@ function LQA.UI.GatherWindow:RefreshMap()
             -- ver UI/GatherNodeTooltip.lua) -- por eso el marcador SI
             -- necesita recibir eventos de mouse aca (a diferencia del
             -- resto de los controles de esta ventana, que los tienen
-            -- deshabilitados a proposito). Ahora tambien prende/apaga el
-            -- halo de arriba (pedido del usuario 2026-09-07).
+            -- deshabilitados a proposito).
+            --
+            -- REVERTIDO (2026-09-07): se probaron 2 variantes de "resaltado
+            -- al pasar el mouse" (halo con Control separado, y agrandar el
+            -- propio icono) -- ambas terminaron rompiendo que se vieran
+            -- otros iconos guardados en el mapa. El usuario pidio volver
+            -- exactamente al punto en que confirmo que todo funcionaba bien
+            -- (icono de MARKER_SIZE fijo, solo tooltip, sin ningun efecto
+            -- de hover visual) -- no se reintenta el resaltado por ahora.
             local tooltipText = tostring(point.node) .. " (tier " .. tostring(point.tier) .. ")"
             marker.MouseHover = function()
                 GatherNodeTooltip.GetInstance():ShowFor(tooltipText)
-                highlight:SetVisible(true)
             end
             marker.MouseLeave = function()
                 GatherNodeTooltip.GetInstance():Hide()
-                highlight:SetVisible(false)
             end
 
-            table.insert(self.markers, highlight)
             table.insert(self.markers, marker)
             sumX = sumX + px
             sumY = sumY + py
