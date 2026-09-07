@@ -32,31 +32,83 @@ _G.GatherEventParser = {}
 -- lo mande el cliente -- adivinar cual de los 2 rompia el patron en silencio
 -- (nodeNameRaw quedaba nil, ni el caso exito ni el de error se disparaban).
 -- Ahora se captura TODO lo que sigue y se limpia en CleanNodeName().
+--
+-- El patron YA NO exige la palabra "de" -- se confirmo en vivo (2026-09-07,
+-- Erudito con "Jarron antiguo") que la plantilla de genero del cliente
+-- ("Tomando los contenidos #1:{del[m]|de la[f]|de los[mp]|de las[fp]|de[n]}
+-- #1:") a veces resuelve el articulo a VACIO segun el genero del objeto,
+-- dando "Tomando los contenidos Jarron antiguo..." sin ningun "de/del/de
+-- la" -- con el patron anterior (que exigia "de%s+") nodeNameRaw quedaba nil
+-- y TODO el bloque de deteccion se saltaba en silencio (ni exito ni error).
+-- Se reproduce igual con distintas versiones del .dat, asi que no es
+-- corrupcion de traduccion -- es una variante real del cliente que hay que
+-- tolerar aca.
+--
+-- Generalizado (2026-09-07): en vez de cubrir SOLO "con de" y "sin de" como
+-- 2 casos puntuales, la limpieza de prefijos abarca CUALQUIER combinacion de
+-- genero/numero de la plantilla del cliente (con o sin "de" delante, en
+-- cualquier orden) y queda preparada para variantes nuevas que aparezcan mas
+-- adelante -- ver PrefixStrip() mas abajo.
 local PATTERNS = {
-    NODE = "^Tomando los contenidos de%s+(.+)$",
-    ITEM = "^Has adquirido: %[(.-)%]%.$",
+    NODE = "^Tomando los contenidos%s*(.+)$",
+    -- ": " y "." al final se vuelven opcionales/flexibles (espacios extra,
+    -- sin punto final, etc.) -- mismo principio que NODE: no asumir que el
+    -- cliente siempre manda el formato exacto observado hasta hoy.
+    ITEM = "^Has adquirido:%s*%[(.-)%]%.?%s*$",
 }
 
 -- Mismo motivo que arriba: el mensaje real trae un articulo de mas antes del
 -- nombre del nodo ("...de los Veta de cobre...", con "los" fijo sin importar
--- genero/numero real -- probablemente una plantilla generica del cliente).
+-- genero/numero real -- probablemente una plantilla generica del cliente) --
+-- o directamente NINGUN articulo ("...Jarron antiguo...", ver nota arriba).
 -- GatherNodesDB.byNode esta indexado SIN articulo, asi que hay que sacarlo
 -- antes de buscar. Loop en vez de patron con alternancia porque Lua no
 -- soporta "(a|b|c)" en sus patrones.
-local ARTICLES = { "el ", "la ", "los ", "las ", "un ", "una " }
+--
+-- DE_PREFIXES cubre las 5 formas de la plantilla de genero del cliente
+-- (#1:{del[m]|de la[f]|de los[mp]|de las[fp]|de[n]} #1:, ver .dat token
+-- 0x0C5D7105 en tabla 0x250001B2) -- "de[n]" es la forma neutra/vacia, por
+-- eso "de " (sin nada detras) tambien esta en la lista. ARTICLES cubre
+-- definidos e indefinidos, singular y plural, por si el nombre del nodo
+-- trae su propio articulo suelto sin "de" delante. Los mas largos van
+-- primero en cada lista para no cortar "de la"/"de los"/"de las" a mitad
+-- como si fueran solo "de ".
+local DE_PREFIXES = { "de la ", "de los ", "de las ", "del ", "de " }
+local ARTICLES = { "los ", "las ", "una ", "unos ", "unas ", "el ", "la ", "un " }
 local ELLIPSIS_UTF8 = "\226\128\166" -- U+2026 "…" en UTF-8
+
+-- Aplica DE_PREFIXES y ARTICLES en bucle (no solo una pasada de cada uno)
+-- hasta que ninguno matchee mas -- asi cubre combinaciones encadenadas que
+-- puedan aparecer a futuro (p.ej. un prefijo de genero seguido de un
+-- articulo suelto) sin tener que anticipar cada caso a mano.
+local function PrefixStrip(name)
+    local changed = true
+    while changed do
+        changed = false
+        for _, prefix in ipairs(DE_PREFIXES) do
+            if string.sub(name, 1, #prefix) == prefix then
+                name = string.sub(name, #prefix + 1)
+                changed = true
+                break
+            end
+        end
+        for _, article in ipairs(ARTICLES) do
+            if string.sub(name, 1, #article) == article then
+                name = string.sub(name, #article + 1)
+                changed = true
+                break
+            end
+        end
+    end
+    return name
+end
 
 local function CleanNodeName(raw)
     local name = string.gsub(raw, "^%s*(.-)%s*$", "%1")
     name = string.gsub(name, "%.+$", "")
     name = string.gsub(name, ELLIPSIS_UTF8 .. "+$", "")
     name = string.gsub(name, "^%s*(.-)%s*$", "%1")
-    for _, article in ipairs(ARTICLES) do
-        if string.sub(name, 1, #article) == article then
-            name = string.sub(name, #article + 1)
-            break
-        end
-    end
+    name = PrefixStrip(name)
     return name
 end
 
@@ -98,10 +150,15 @@ function GatherEventParser.ParseMessage(sender, message)
         local nodeName = CleanNodeName(nodeNameRaw)
         local entry = _G.GatherNodesDB.byNode[nodeName]
         if entry == nil then
-            -- Confirmacion siempre visible (no gateada) mientras se valida
-            -- el flujo end-to-end -- ver nota igual en GatherPointsStore.lua.
-            Turbine.Shell.WriteLine("<rgb=#FF0000>GatherSync: nodo detectado en el chat pero NO esta en GatherNodesDB -> \"" ..
-                tostring(nodeName) .. "\"</rgb>")
+            -- Ya no es "siempre visible" (2026-09-07, pedido del usuario:
+            -- "sacar los ruidos del chat") -- el flujo se valido a fondo
+            -- esta sesion, ver nota igual en GatherPointsStore.lua. Detras
+            -- de LQA.Debug.Enabled para quien necesite reportar un nodo
+            -- faltante.
+            if LQA.Debug.Enabled then
+                Turbine.Shell.WriteLine("<rgb=#FF0000>GatherSync: nodo detectado en el chat pero NO esta en GatherNodesDB -> \"" ..
+                    tostring(nodeName) .. "\"</rgb>")
+            end
             pendingNode = nil
             pendingItems = nil
             pendingNodeTime = nil
@@ -111,9 +168,11 @@ function GatherEventParser.ParseMessage(sender, message)
         pendingNode = entry
         pendingItems = {}
         pendingNodeTime = Turbine.Engine.GetGameTime()
-        Turbine.Shell.WriteLine("<rgb=#00FF00>GatherSync: nodo reconocido -> " ..
-            tostring(nodeName) .. " | " .. tostring(entry.profession) ..
-            " tier " .. tostring(entry.tier) .. " (confianza=" .. tostring(entry.confidence) .. ")</rgb>")
+        if LQA.Debug.Enabled then
+            Turbine.Shell.WriteLine("<rgb=#00FF00>GatherSync: nodo reconocido -> " ..
+                tostring(nodeName) .. " | " .. tostring(entry.profession) ..
+                " tier " .. tostring(entry.tier) .. " (confianza=" .. tostring(entry.confidence) .. ")</rgb>")
+        end
 
         -- Dispara la captura de coordenada YA -- no esperamos a las lineas de
         -- "Has adquirido" porque no todas llegan en el mismo tick de chat.
@@ -128,6 +187,31 @@ function GatherEventParser.ParseMessage(sender, message)
         if entry ~= nil then
             if pendingNode ~= nil and pendingItems ~= nil then
                 table.insert(pendingItems, itemName)
+            else
+                -- BUG REAL encontrado en vivo (2026-09-07): apicultura
+                -- (Colmena) y probablemente otras mecanicas de recoleccion
+                -- "directas" NO mandan una linea "Tomando los contenidos de
+                -- X..." antes del item -- el jugador reporto "Gota de miel
+                -- fina de trebol" y "Racimo de arandanos" llegando SOLOS,
+                -- sin nodo previo detectado, y la ventana de guardar nunca
+                -- aparecia porque el flujo entero dependia de esa linea de
+                -- nodo. Si el item se reconoce pero no hay un nodo pendiente
+                -- activo, el item MISMO dispara la captura (mismo patron que
+                -- el nodo: pendingNode/pendingItems/pendingNodeTime +
+                -- GATHER_NODE_DETECTED) usando el nombre de nodo que ya trae
+                -- la propia entrada (entry.node, ver register()) -- asi
+                -- cualquier tipo de recoleccion que no siga el patron
+                -- "nodo primero" tambien puede guardar su ubicacion.
+                pendingNode = entry
+                pendingItems = { itemName }
+                pendingNodeTime = Turbine.Engine.GetGameTime()
+                if LQA.Debug.Enabled then
+                    Turbine.Shell.WriteLine("<rgb=#00FF00>GatherSync: item reconocido sin nodo previo -> " ..
+                        tostring(itemName) .. " | " .. tostring(entry.profession) ..
+                        " tier " .. tostring(entry.tier) .. " (confianza=" .. tostring(entry.confidence) .. ")</rgb>")
+                end
+                LQA.Core.EventBus:Publish("GATHER_NODE_DETECTED", { entry = entry, nodeName = entry.node })
+                return true
             end
             if LQA.Debug.Enabled then
                 Turbine.Shell.WriteLine("<rgb=#00FF00>GatherSync DEBUG: item reconocido = " ..

@@ -25,6 +25,27 @@ LQA.Debug = LQA.Debug or {}
 -- legitimo (nunca publica QUEST_JUST_ACCEPTED para una mision que el
 -- addon ya cree activa). Confirmado con Desmarcar+Activar manual: el
 -- libro se abrio bien. Vuelto a false otra vez.
+--
+-- Prendido DE NUEVO 2026-09-07: GatherCaptureButton no aparece al recolectar
+-- jarrones (Erudito) ni cultivos de granja (Granjero/Farmer) -- solo funciona
+-- con Minero. GatherEventParser.PATTERNS.NODE ("Tomando los contenidos de
+-- X...") SOLO fue confirmado en vivo con mineria (ver Arquitectura_GatherSync.md
+-- #3.2) -- nunca se capturo el chat real de Erudito/Granjero, asi que es muy
+-- probable que el patron no coincida con esos mensajes (verbo distinto:
+-- "buscar" en un jarron no es lo mismo que "tomar el contenido" de una veta).
+-- Con esto en true, cada linea de chat que llega a GatherEventParser se
+-- imprime en celeste ("GatherSync CHAT INTERCEPT: ...") -- hace falta que el
+-- jugador recoja un jarron y un cultivo y pegue el texto exacto que aparece
+-- para poder agregar el patron correcto.
+--
+-- VUELTO A false (2026-09-07): el flujo de Erudito/Granjero/Minero/Leñador
+-- ya se valido extensamente en esta sesion (auditoria completa de nodos,
+-- items y tiers contra datos reales de MoorMap) -- el pedido del usuario de
+-- "sacar los ruidos del chat" confirma que ya no hace falta el diagnostico
+-- linea-por-linea. Los mensajes de confirmacion de GatherSync que estaban
+-- "siempre visibles" (no gateados) mientras se validaba el flujo end-to-end
+-- ahora tambien quedan detras de este flag, ver GatherEventParser.lua,
+-- GatherPointsStore.lua y LocationAdapter.lua.
 LQA.Debug.Enabled = false
 
 LQA.Core.EventBus = {

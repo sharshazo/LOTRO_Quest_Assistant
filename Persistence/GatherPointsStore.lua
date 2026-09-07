@@ -107,10 +107,18 @@ function GatherPointsStore.AddPoint(entry, ns, ew, region)
     table.insert(list, point)
     GatherPointsStore.Save()
 
-    local zoneDisplayName = _G.MoorMapZoneResolver and MoorMapZoneResolver.DisplayName(zone.name) or zone.name
-    Turbine.Shell.WriteLine("<rgb=#00FF00>GatherSync: punto nuevo guardado -> " .. tostring(entry.node) ..
-        " (tier " .. tostring(entry.tier) .. ") en " .. tostring(zoneDisplayName) ..
-        " [" .. tostring(ns) .. "N/S, " .. tostring(ew) .. "E/W]</rgb>")
+    -- Ya no es "siempre visible" (2026-09-07, pedido del usuario: "sacar los
+    -- ruidos del chat") -- el cierre del boton flotante (GatherCaptureButton,
+    -- se esconde al recibir GATHER_POINT_ADDED) ya confirma visualmente que
+    -- el guardado funciono, no hace falta ademas un mensaje de chat. La
+    -- confirmacion de FALLO (arriba, "sin mapa conocido") si se deja visible
+    -- -- un guardado que falla en silencio es peor que uno exitoso sin aviso.
+    if LQA.Debug.Enabled then
+        local zoneDisplayName = _G.MoorMapZoneResolver and MoorMapZoneResolver.DisplayName(zone.name) or zone.name
+        Turbine.Shell.WriteLine("<rgb=#00FF00>GatherSync: punto nuevo guardado -> " .. tostring(entry.node) ..
+            " (tier " .. tostring(entry.tier) .. ") en " .. tostring(zoneDisplayName) ..
+            " [" .. tostring(ns) .. "N/S, " .. tostring(ew) .. "E/W]</rgb>")
+    end
 
     LQA.Core.EventBus:Publish("GATHER_POINT_ADDED", { profession = prof, zoneIdx = zone.idx, point = point })
     return true, "nuevo"

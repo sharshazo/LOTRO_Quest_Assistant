@@ -21,16 +21,36 @@ _G.MoorMapZoneResolver = {}
 
 -- entry: {idx, name, image, width, height, hFactor, hOffset, vFactor,
 -- vOffset, region, minNS, maxNS, minEW, maxEW, tier}
+--
+-- BUG REAL encontrado en auditoria (2026-09-07): el dato CRUDO de MoorMap
+-- (GaranStuff/MoorMap/Defaults.lua, tmpMapInfo[370] "mossward") trae
+-- MinNS=60.98 > MaxNS=-60.35 -- limites invertidos en la FUENTE original, no
+-- un error nuestro de extraccion (Data/MoorMapZones.lua copia ese dato tal
+-- cual, como debe ser). Con la comparacion directa de antes (ns>=minNS and
+-- ns<=maxNS) esa zona queda matematicamente MUERTA -- ningun ns satisface
+-- ambas condiciones a la vez -- asi que un punto capturado ahi nunca
+-- matchea esta zona y cae en la de mayor tier siguiente que SI lo contenga
+-- (ej. la region entera), guardando el loc con el mapa equivocado sin
+-- ningun aviso. Se normaliza min/max aca (nunca se asume que el dato de
+-- origen viene bien ordenado) para que esto no pueda volver a pasar, sin
+-- tener que adivinar/corregir el valor exacto de Mossward a mano.
+local function NormalizedRange(a, b)
+    if a <= b then return a, b end
+    return b, a
+end
+
 function MoorMapZoneResolver.Resolve(region, ns, ew)
     if region == nil or ns == nil or ew == nil or _G.MoorMapZones == nil then return nil end
 
     local best = nil
     for _, entry in ipairs(MoorMapZones) do
-        if entry.region == region and entry.hFactor ~= 0 and entry.vFactor ~= 0 and
-            ns >= entry.minNS and ns <= entry.maxNS and
-            ew >= entry.minEW and ew <= entry.maxEW then
-            if best == nil or (entry.tier or 0) > (best.tier or 0) then
-                best = entry
+        if entry.region == region and entry.hFactor ~= 0 and entry.vFactor ~= 0 then
+            local lowNS, highNS = NormalizedRange(entry.minNS, entry.maxNS)
+            local lowEW, highEW = NormalizedRange(entry.minEW, entry.maxEW)
+            if ns >= lowNS and ns <= highNS and ew >= lowEW and ew <= highEW then
+                if best == nil or (entry.tier or 0) > (best.tier or 0) then
+                    best = entry
+                end
             end
         end
     end

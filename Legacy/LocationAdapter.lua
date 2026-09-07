@@ -70,10 +70,16 @@ function LocationAdapter.ParseLocationMessage(message)
             region, lx, ly, ox, oy, oz = tonumber(region), tonumber(lx), tonumber(ly),
                 tonumber(ox), tonumber(oy), tonumber(oz)
             local ns, ew = ToNSEW(lx, ly, ox, oy)
-            -- Confirmacion siempre visible (no gateada) mientras se valida
-            -- el flujo end-to-end -- ver nota igual en GatherPointsStore.lua.
-            Turbine.Shell.WriteLine("<rgb=#00AAFF>GatherSync: /loc resuelto -> region=" ..
-                tostring(region) .. " ns=" .. tostring(ns) .. " ew=" .. tostring(ew) .. "</rgb>")
+            -- Ya no es "siempre visible" (2026-09-07, pedido del usuario:
+            -- "sacar los ruidos del chat") -- esto se disparaba con
+            -- CUALQUIER /loc exitoso, no solo los de recoleccion (el
+            -- jugador puede usar /loc por curiosidad o via otro addon), asi
+            -- que era la fuente de ruido mas frecuente de las 4. Ver nota
+            -- igual en GatherPointsStore.lua/GatherEventParser.lua.
+            if LQA.Debug.Enabled then
+                Turbine.Shell.WriteLine("<rgb=#00AAFF>GatherSync: /loc resuelto -> region=" ..
+                    tostring(region) .. " ns=" .. tostring(ns) .. " ew=" .. tostring(ew) .. "</rgb>")
+            end
             if LocationAdapter.OnLocationResolved ~= nil then
                 LocationAdapter.OnLocationResolved(region, ns, ew, lx, ly)
             end
