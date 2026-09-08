@@ -910,15 +910,15 @@ register({ profession = "ERUDITO", tier = "?", zone = "sin catalogar", confidenc
 -- dependen del fix de GatherEventParser.lua que dispara la captura desde el
 -- ITEM cuando no hay nodo pendiente. Nombre de nodo = nombre de item (la
 -- planta que se ve/clickea en el mundo es el mismo objeto que se recibe).
-register({ profession = "ERUDITO", tier = 1, zone = "Apprentice", confidence = "alta" },
+register({ profession = "ERUDITO", tier = 1, zone = "Apprentice", confidence = "alta", directPickup = true },
     { "Plantas de milenrama" },
     { "Raíz de milenrama", "Raíces de milenrama" })
 
-register({ profession = "ERUDITO", tier = 2, zone = "Journeyman", confidence = "alta" },
+register({ profession = "ERUDITO", tier = 2, zone = "Journeyman", confidence = "alta", directPickup = true },
     { "Planta de guede", "Plantas de guede" },
     { "Planta de guede", "Plantas de guede" })
 
-register({ profession = "ERUDITO", tier = 2, zone = "Journeyman", confidence = "media" },
+register({ profession = "ERUDITO", tier = 2, zone = "Journeyman", confidence = "media", directPickup = true },
     {}, -- nombre exacto del nodo en el mundo sin confirmar (distinto de "Planta de guede")
     { "Planta de Índigo" })
 
@@ -936,7 +936,7 @@ register({ profession = "ERUDITO", tier = 2, zone = "Journeyman", confidence = "
 -- nodo pendiente activo (ver nota en ese archivo), asi que con solo
 -- registrar el item alcanza para que la ventana de guardar aparezca aunque
 -- nunca llegue una linea de nodo para este tipo de recoleccion.
-register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar" },
+register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar", directPickup = true },
     { "Colmena", "Colmena pequeña", "Colmena simple", "Colmena prometedora", "Colmena silvestre" },
     { "Gota de miel", "Gotas de miel", "Miel fresca" })
 
@@ -956,21 +956,21 @@ register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confiden
     { "Colmena de abejas de Dun", "Colmenas de abejas de Dun" },
     {})
 
-register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar" },
+register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar", directPickup = true },
     -- item confirmado en vivo por el usuario (2026-09-07): chat real mostro
     -- "Has adquirido: [Gota de miel fina de trébol]".
     {},
     { "Gota de miel fina de trébol", "Gotas de miel fina de trébol" })
 
-register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar" },
+register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar", directPickup = true },
     {},
     { "Gota de miel de flores silvestres", "Gotas de miel de flores silvestres" })
 
-register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar" },
+register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar", directPickup = true },
     {},
     { "Gotas de miel de los Valles" })
 
-register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar" },
+register({ profession = "GRANJERO", tier = "?", zone = "sin catalogar", confidence = "sin catalogar", directPickup = true },
     -- confirmado por MoorMap NodeTier.lua ("Stalk of Rhubarb"): recoleccion
     -- directa, sin nombre de campo/nodo localizado -- item-only trigger.
     {},

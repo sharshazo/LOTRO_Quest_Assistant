@@ -245,6 +245,35 @@ function GatherEventParser.ParseMessage(sender, message)
                 -- la propia entrada (entry.node, ver register()) -- asi
                 -- cualquier tipo de recoleccion que no siga el patron
                 -- "nodo primero" tambien puede guardar su ubicacion.
+                --
+                -- BUG REAL #2 encontrado en vivo (2026-09-07, reportado por
+                -- el usuario): esta misma via disparaba tambien con items que
+                -- NO son de recoleccion directa -- ej. "Tallado de elfo
+                -- desgastado" (Erudito tier 5) esta registrado SOLO como
+                -- item en GatherNodesDB (sin nodeNames) no porque se recoja
+                -- por interaccion directa, sino porque su nodo real
+                -- ("Jarron antiguo") ya esta registrado en el tier 3 con el
+                -- mismo nombre ES (ver comentario junto al registro) -- es
+                -- decir, el hueco en nodeNames es un artefacto de la
+                -- ambiguedad de nombres, no una senal de que el item no tenga
+                -- nodo. Al no distinguir esto, matar un mob que suelta ese
+                -- mismo item disparaba la ventana de guardar igual, con la
+                -- ubicacion de la muerte del mob (no de ningun nodo real).
+                -- Fix: solo disparar esta via "item sin nodo previo" para
+                -- entradas marcadas explicitamente entry.directPickup=true
+                -- en GatherNodesDB.lua (Colmena/miel, Tallo de ruibarbo,
+                -- plantas de tinte de Erudito -- las unicas confirmadas por
+                -- MoorMap NodeTier.lua como recoleccion sin linea de nodo).
+                -- Cualquier otro item reconocido sin nodo pendiente activo se
+                -- ignora en silencio, igual que loot normal de mob/mision.
+                if not entry.directPickup then
+                    if LQA.Debug.Enabled then
+                        Turbine.Shell.WriteLine("<rgb=#FFAA00>GatherSync: item de recoleccion (" ..
+                            tostring(itemName) .. ") reconocido SIN nodo pendiente y sin directPickup -- " ..
+                            "descartado (probable loot de mob/mision, no un nodo real).</rgb>")
+                    end
+                    return false
+                end
                 pendingNode = entry
                 pendingItems = { itemName }
                 pendingNodeTime = Turbine.Engine.GetGameTime()
