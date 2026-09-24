@@ -344,6 +344,25 @@ function LQA.UI.QuestBookWindow:Constructor()
     self.objectivesList:SetSize(RIGHT_PAGE_W, BOTTOM_ROW_Y - 86)
     self.objectivesList:SetVerticalScrollBar(self.objectivesScroll)
 
+    -- Logo de MISION DE GRUPO junto al titulo (2026-09-22, pedido explicito
+    -- del usuario: "que en el mismo enunciado aparezca un logo de grupo").
+    -- En el margen IZQUIERDO libre de la pagina (la hoja empieza en x=30, el
+    -- titulo en x=77 -- ver nota grande de RIGHT_PAGE_X arriba): 24x24 en
+    -- x=49 termina en 73, no toca el titulo ni mueve nada. Tamaño real del
+    -- .tga + AlphaBlend (SetBackground no reescala -- ver
+    -- CreateIconButtonAlpha en MEMBookStyle.lua). Oculto por defecto, SOLO
+    -- ShowFor lo muestra y solo para misiones de GroupQuestDB.
+    self.groupTitleIcon = Turbine.UI.Control()
+    self.groupTitleIcon:SetParent(self.pageBg)
+    self.groupTitleIcon:SetPosition(49, 80)
+    self.groupTitleIcon:SetSize(24, 24)
+    self.groupTitleIcon:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+    if _G.GroupQuest then
+        self.groupTitleIcon:SetBackground(GroupQuest.ICON_24)
+    end
+    self.groupTitleIcon:SetMouseVisible(false)
+    self.groupTitleIcon:SetVisible(false)
+
     -- Progreso "(N/M)", solo si la mision esta ACTIVA y tiene dato real
     -- guardado -- mismo assets que QuestInfoTooltip.lua (nunca se inventa
     -- un porcentaje sin dato detras).
@@ -499,6 +518,19 @@ function LQA.UI.QuestBookWindow:ShowFor(ndx, kind)
     self:SetText(esName) -- titulo nativo de la ventana (chrome de Lotro)
     self.lblTitle:SetText(esName) -- repetido adentro de la pagina, estilo libro
 
+    -- Mision de GRUPO (ver Core/GroupQuest.lua): titulo en color de grupo
+    -- (el contorno negro que ya tiene lblTitle lo separa del pergamino) +
+    -- logo a la izquierda. Se resetea SIEMPRE -- el libro es una sola
+    -- ventana reusada para cada mision que se acepta/completa.
+    local groupEntry = _G.GroupQuest and GroupQuest.Get(quest)
+    if groupEntry then
+        self.lblTitle:SetForeColor(GroupQuest.Color.Dark)
+        self.groupTitleIcon:SetVisible(true)
+    else
+        self.lblTitle:SetForeColor(LQA.UI.MEMBookStyle.Color.TitleInk)
+        self.groupTitleIcon:SetVisible(false)
+    end
+
     self.lblLevel:SetText(tostring(quest.level or "?"))
     local area = (quest.area and quest.area ~= "" and quest.area) or quest.zone
 
@@ -553,6 +585,41 @@ function LQA.UI.QuestBookWindow:ShowFor(ndx, kind)
     -- ver captura de referencia): 1 fila por linea de objetivo/narrativa,
     -- mismo dato que arriba pero presentado como lista en vez de parrafo.
     self.objectivesList:ClearItems()
+
+    -- Primera fila del checklist para misiones de GRUPO: logo + "MISION DE
+    -- GRUPO · Comunidad (6)" + "Mazmorra: <instancia>" -- lo que el jugador
+    -- necesita saber ANTES de leer los objetivos (a donde ir y con cuantos).
+    -- Misma fuente/contorno que las filas normales de abajo (60px de alto,
+    -- Bold18) para que el ListBox la trate igual; el texto arranca despues
+    -- del logo (30px) y usa el color de grupo en vez de READABLE_INK.
+    if groupEntry then
+        local groupRow = Turbine.UI.Control()
+        groupRow:SetSize(RIGHT_PAGE_W - 10, 60)
+        groupRow:SetMouseVisible(false)
+
+        local groupRowIcon = Turbine.UI.Control()
+        groupRowIcon:SetParent(groupRow)
+        groupRowIcon:SetPosition(0, 4)
+        groupRowIcon:SetSize(24, 24)
+        groupRowIcon:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+        groupRowIcon:SetBackground(GroupQuest.ICON_24)
+        groupRowIcon:SetMouseVisible(false)
+
+        local groupRowLbl = Turbine.UI.Label()
+        groupRowLbl:SetParent(groupRow)
+        groupRowLbl:SetPosition(30, 0)
+        groupRowLbl:SetSize(RIGHT_PAGE_W - 10 - 30, 60)
+        groupRowLbl:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold14)
+        groupRowLbl:SetForeColor(GroupQuest.Color.Dark)
+        groupRowLbl:SetOutlineColor(Turbine.UI.Color(0, 0, 0))
+        groupRowLbl:SetFontStyle(Turbine.UI.FontStyle.Outline)
+        groupRowLbl:SetMultiline(true)
+        groupRowLbl:SetMouseVisible(false)
+        groupRowLbl:SetText(GroupQuest.Statement(groupEntry))
+
+        self.objectivesList:AddItem(groupRow)
+    end
+
     for _, line in ipairs(narrative) do
         local row = Turbine.UI.Label()
         -- Alto 52 (no 40): mismo criterio que el resto de la sesion --

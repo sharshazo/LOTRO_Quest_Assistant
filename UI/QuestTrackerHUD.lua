@@ -199,7 +199,19 @@ end
 -- booleano real, 4231 misiones lo tienen en true. Ningun campo de
 -- "grupo" generico existe aparte de esto -- se usa el category como
 -- proxy, es lo unico con dato real disponible (no se inventa nada).
+--
+-- 2026-09-22 (pedido explicito del usuario: TODAS las misiones de grupo --
+-- mazmorras, raids, instancias de grupo -- con un color especifico + logo
+-- de grupo): ahora SI existe un dato real de grupo -- Data/GroupQuestDB.lua
+-- (tamaño oficial del juego, 1.448 misiones, ver Core/GroupQuest.lua) --
+-- que se consulta PRIMERO, antes que "epic": un capitulo epico que es de
+-- comunidad/incursion tambien es contenido de grupo y el jugador necesita
+-- saberlo. El proxy viejo por category se deja abajo como respaldo por si
+-- GroupQuestDB no cargara (nunca rompe nada si falta).
 local function ClassifyQuest(quest)
+    if _G.GroupQuest and GroupQuest.IsGroup(quest) then
+        return "group"
+    end
     local cat = quest.category or ""
     if string.find(cat, "Epic", 1, true) then
         return "epic"
@@ -218,7 +230,10 @@ local function InitQuestTypeColors()
     if QUEST_TYPE_COLOR then return end
     QUEST_TYPE_COLOR = {
         epic = Turbine.UI.Color(0.55, 0.12, 0.10),       -- rojo oscuro: mision principal/epica
-        group = Turbine.UI.Color(0.62, 0.36, 0.05),      -- naranja/oxido: grupo, instancia, redada, escaramuza
+        -- naranja fuego: grupo (mazmorra, incursion, instancia, escaramuza)
+        -- -- mismo color en todo el addon, definido una sola vez en
+        -- Core/GroupQuest.lua (antes naranja/oxido 0.62,0.36,0.05 a mano).
+        group = (_G.GroupQuest and GroupQuest.Color.Dark) or Turbine.UI.Color(0.62, 0.36, 0.05),
         repeatable = Turbine.UI.Color(0.10, 0.42, 0.32), -- verde azulado: repetible
         normal = LQA.UI.MEMBookStyle.Color.BodyText,     -- gris-cafe de siempre: mision normal, sin cambios
     }
@@ -647,9 +662,23 @@ function LQA.UI.QuestTrackerHUD:PopulateActive()
 
                     local badge = Turbine.UI.Control()
                     badge:SetParent(item)
-                    badge:SetPosition(SAFE_LEFT - 10, 6)
-                    badge:SetSize(10, 10)
-                    badge:SetBackColor(qColor)
+                    if qType == "group" and _G.GroupQuest and GroupQuest.IsGroup(quest) then
+                        -- 2026-09-22: logo de grupo en vez del punto de
+                        -- color (pedido explicito del usuario). 16x16 =
+                        -- tamaño REAL del .tga (SetBackground no reescala)
+                        -- + AlphaBlend para el borde redondo. Centrado en
+                        -- el mismo punto que el badge viejo (SAFE_LEFT-5,
+                        -- y=11) y termina en SAFE_LEFT+3, antes de que
+                        -- arranque el texto (SAFE_LEFT+6) -- no se pisan.
+                        badge:SetPosition(SAFE_LEFT - 13, 3)
+                        badge:SetSize(16, 16)
+                        badge:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+                        badge:SetBackground(GroupQuest.ICON_16)
+                    else
+                        badge:SetPosition(SAFE_LEFT - 10, 6)
+                        badge:SetSize(10, 10)
+                        badge:SetBackColor(qColor)
+                    end
 
                     local lbl = Turbine.UI.Label()
                     lbl:SetParent(item)

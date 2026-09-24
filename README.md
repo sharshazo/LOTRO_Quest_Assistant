@@ -30,6 +30,21 @@ voz con IA.
   [**Narrador_IA**](https://github.com/sharshazo/Narrador_IA) — ver
   esa sección más abajo.
 
+## Novedades (2026-09-22)
+
+- **Misiones de grupo**: color propio + logo de grupo en la lista, el
+  tracker, el libro y el tooltip, con el tamaño oficial (grupo pequeño 3,
+  comunidad 6, incursión 12+) y a qué mazmorra/incursión hay que ir
+  (1.448 misiones, dato oficial del juego).
+- **Filtro de grupo** y botón **"Buscar grupo"** (arma el mensaje de
+  LFF para el canal; sale solo al hacer clic).
+- Etiqueta **Diaria / Semanal / Quincenal** (2.093 misiones) y marca
+  verde de misión **apropiada para tu nivel**.
+- Se integra con **Mapa del Mundo** (carpeta `WorldMap_Addon` de
+  [Addons-Lotro](https://github.com/sharshazo/Addons-Lotro)): moneda
+  dorada con tus misiones activas por zona, calaveras de mazmorra /
+  incursión y un solo icono flotante que agrupa Mapa, Libro y Lupa.
+
 ## Instalación
 
 1. Copiá la carpeta `LOTRO_Quest_Assistant` completa dentro de:

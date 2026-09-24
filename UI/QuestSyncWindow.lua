@@ -303,6 +303,11 @@ local STRINGS = {
         point_fallback = "Punto ", no_zone = "Sin zona", lang_btn = "EN", unknown = "Desconocido",
         left_header_maps = "Mapas", left_header_titles = "Titulos", right_header_info = "Informacion",
         view_points = "Ver puntos", view_map = "Ver mapa",
+        -- 2026-09-22: filtro de grupo + boton "Buscar grupo" (ver
+        -- btnGroupFilter/btnLff en el Constructor).
+        group_filter_off = "Grupo", group_filter_on = "Todas",
+        group_filter_info = "Solo misiones de grupo", group_filter_empty = "Sin misiones de grupo aca",
+        group_filter_count = " de grupo", lff_btn = "Buscar grupo",
     },
     EN = {
         no_active_quest = "No active quest",
@@ -314,6 +319,9 @@ local STRINGS = {
         point_fallback = "Point ", no_zone = "No zone", lang_btn = "ES", unknown = "Unknown",
         left_header_maps = "Maps", left_header_titles = "Titles", right_header_info = "Information",
         view_points = "View points", view_map = "View map",
+        group_filter_off = "Group", group_filter_on = "All",
+        group_filter_info = "Group quests only", group_filter_empty = "No group quests here",
+        group_filter_count = " group", lff_btn = "Find group",
     },
 }
 
@@ -560,8 +568,41 @@ function QuestSyncWindow:Constructor()
     self.searchBox = Turbine.UI.Lotro.TextBox()
     self.searchBox:SetParent(self.pageBg)
     self.searchBox:SetPosition(LEFT_X, SEARCH_Y)
-    self.searchBox:SetSize(140, 20)
+    -- 94 (antes 140): le hace lugar al boton de filtro de grupo de abajo,
+    -- sin mover "Ver todas" (sigue en LEFT_X+146) ni nada mas de la fila.
+    self.searchBox:SetSize(94, 20)
     self.searchBox:SetMultiline(false)
+
+    -- Filtro "solo misiones de grupo" (2026-09-22, pedido explicito del
+    -- usuario -- ver Core/GroupQuest.lua). Boton nativo chico en el hueco
+    -- que libero el buscador: LEFT_X+98 .. LEFT_X+144, justo antes de "Ver
+    -- todas" (LEFT_X+146). Sin Quickslot (solo cambia que filas se listan),
+    -- mismo tipo de control que btnClearSearch/btnLanguage. Apagado por
+    -- defecto: con el filtro apagado la lista es EXACTAMENTE la de antes.
+    -- El texto dice lo que va a pasar al clickear ("Grupo" = mostrar solo
+    -- las de grupo; "Todas" = volver a todas), y lblSearchInfo avisa cuando
+    -- el filtro esta prendido.
+    self.groupFilterOnly = false
+    self.btnGroupFilter = Turbine.UI.Lotro.Button()
+    self.btnGroupFilter:SetParent(self.pageBg)
+    self.btnGroupFilter:SetPosition(LEFT_X + 98, SEARCH_Y - 1)
+    self.btnGroupFilter:SetSize(46, 22)
+    self.btnGroupFilter:SetText(T("group_filter_off"))
+    self.btnGroupFilter.MouseClick = function()
+        self.groupFilterOnly = not self.groupFilterOnly
+        self.btnGroupFilter:SetText(T(self.groupFilterOnly and "group_filter_on" or "group_filter_off"))
+        if self.searchResults then
+            -- Rehace la busqueda: PerformSearch vuelve a poner el texto
+            -- normal de resultados y PopulateSearchResults le suma el
+            -- recuento "de grupo" si el filtro quedo prendido.
+            self:PerformSearch(self.searchBox:GetText())
+        else
+            if not self.groupFilterOnly then
+                self.lblSearchInfo:SetText("")
+            end
+            self:PopulateList()
+        end
+    end
 
     self.btnClearSearch = Turbine.UI.Lotro.Button()
     self.btnClearSearch:SetParent(self.pageBg)
@@ -788,6 +829,50 @@ function QuestSyncWindow:Constructor()
     ApplyHeadingStyle(self.lblStagesHeader)
     self.lblStagesHeader:SetVisible(false)
 
+    -- Cartel de MISION DE GRUPO (2026-09-22, pedido explicito del usuario:
+    -- "que en el mismo enunciado aparezca un logo de grupo y mencione que
+    -- mazmorra o dungeon o raid hay que ir"). Vive en el hueco LIBRE que ya
+    -- existia en el modo mision (SelectQuest siempre usa
+    -- LayoutDetailForMode(false)): debajo del encabezado "Objetivo de la
+    -- Mision:"/boton Mapa (RIGHT_POINTS_Y_NOMAP=319, 26-32px de alto ->
+    -- terminan en ~348) y arriba de MoorMap/Waypoint (RIGHT_BTN_Y=427) --
+    -- sigue dentro del pergamino real (llega a ~468, ver nota grande de
+    -- RIGHT_BOTTOM_LIMIT). No mueve NINGUN control existente.
+    -- Texto claro con contorno negro (ApplyReadableStyle, mismo mecanismo
+    -- que el resto de las filas de este archivo) -- se lee igual sobre
+    -- pergamino o madera sin depender del pixel exacto de fondo.
+    -- Oculto por defecto; SOLO SelectQuest lo muestra, y solo si la mision
+    -- esta en GroupQuestDB. SelectPoi/ClearDetailPanel lo vuelven a ocultar.
+    local GROUP_BANNER_Y = RIGHT_POINTS_Y_NOMAP + 33 -- 352
+    local GROUP_BANNER_H = RIGHT_BTN_Y - GROUP_BANNER_Y - 5 -- 70
+    self.groupBanner = Turbine.UI.Control()
+    self.groupBanner:SetParent(self.pageBg)
+    self.groupBanner:SetPosition(RIGHT_X, GROUP_BANNER_Y)
+    self.groupBanner:SetSize(RIGHT_W, GROUP_BANNER_H)
+    self.groupBanner:SetMouseVisible(false)
+    self.groupBanner:SetVisible(false)
+
+    self.groupBannerIcon = Turbine.UI.Control()
+    self.groupBannerIcon:SetParent(self.groupBanner)
+    self.groupBannerIcon:SetPosition(0, 2)
+    self.groupBannerIcon:SetSize(24, 24)
+    self.groupBannerIcon:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+    if _G.GroupQuest then
+        self.groupBannerIcon:SetBackground(GroupQuest.ICON_24)
+    end
+    self.groupBannerIcon:SetMouseVisible(false)
+
+    self.lblGroupBanner = Turbine.UI.Label()
+    self.lblGroupBanner:SetParent(self.groupBanner)
+    self.lblGroupBanner:SetPosition(30, 0)
+    self.lblGroupBanner:SetSize(RIGHT_W - 30, GROUP_BANNER_H)
+    self.lblGroupBanner:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiquaBold14)
+    self.lblGroupBanner:SetMultiline(true)
+    self.lblGroupBanner:SetMouseVisible(false)
+    if _G.GroupQuest then
+        ApplyReadableStyle(self.lblGroupBanner, GroupQuest.Color.Dark)
+    end
+
     -- Boton "Mapa" (2026-09-05, reemplaza la lista embebida con scrollbar
     -- -- pedido explicito del usuario: "al hacer scroll, corta/clipea
     -- parte del fondo de pergamino... quiero eliminar ese mecanismo por
@@ -880,6 +965,27 @@ function QuestSyncWindow:Constructor()
         MoorMapAdapter.AttachToButton(self.waypointQuickslot, self.btnWay)
     end
 
+    -- Boton "Buscar grupo" (2026-09-22, pedido explicito del usuario: "un
+    -- boton que no rompa la estructura del juego y la visual... que mande
+    -- el mensaje automatico en ingles... en el chat de mundo"). MISMA fila,
+    -- MISMO tipo de control y MISMO mecanismo que MoorMap/Waypoint: boton
+    -- nativo Turbine.UI.Lotro.Button + Quickslot propio detras (Alias con
+    -- el comando de chat, ver GroupQuest.LffCommand) -- nada nuevo sin
+    -- probar. En el hueco libre a la derecha de Waypoint: RIGHT_X+192 ..
+    -- RIGHT_X+292 (Waypoint termina en RIGHT_X+186), dentro del pergamino.
+    -- SOLO visible para misiones de grupo (SelectQuest); el mensaje sale
+    -- UNICAMENTE cuando el jugador hace click, nunca solo.
+    self.btnLff = Turbine.UI.Lotro.Button()
+    self.btnLff:SetParent(self.pageBg)
+    self.btnLff:SetPosition(RIGHT_X + 192, RIGHT_BTN_Y)
+    self.btnLff:SetSize(100, 32)
+    self.btnLff:SetText(T("lff_btn"))
+    self.btnLff:SetVisible(false)
+    if MoorMapAdapter then
+        self.lffQuickslot = MoorMapAdapter.CreateQuickslot()
+        MoorMapAdapter.AttachToButton(self.lffQuickslot, self.btnLff)
+    end
+
     self:SelectTab("misiones")
     self:UpdateActiveSummary()
 
@@ -941,6 +1047,8 @@ end
 
 function QuestSyncWindow:RefreshLanguage()
     self.btnLanguage:SetText(T("lang_btn"))
+    self.btnGroupFilter:SetText(T(self.groupFilterOnly and "group_filter_on" or "group_filter_off"))
+    self.btnLff:SetText(T("lff_btn"))
     self:UpdateCategoryChrome()
     self.lblRightHeader:SetText(T("right_header_info"))
 
@@ -1071,6 +1179,14 @@ function QuestSyncWindow:AddQuestListRow(ndx, quest, displayNameOverride)
         esName = esName .. " [" .. tostring(quest.level) .. "]"
     end
 
+    -- Etiqueta Diaria/Semanal/Quincenal (2026-09-22, ver Core/QuestTags.lua
+    -- -- dato oficial de Data/QuestLockDB.lua). No se agrega si el nombre
+    -- ya lo dice (muchos traen "(Daily)"/"(Diaria)" en el propio nombre).
+    local lockText = _G.QuestTags and QuestTags.LockText(quest)
+    if lockText and not QuestTags.NameAlreadyTagged(esName) then
+        esName = esName .. " · " .. lockText
+    end
+
     local item = Turbine.UI.Control()
     item:SetSize(LEFT_W, 58)
 
@@ -1080,6 +1196,29 @@ function QuestSyncWindow:AddQuestListRow(ndx, quest, displayNameOverride)
     badge:SetSize(8, 8)
     badge:SetBackColor(StateColor(state))
 
+    -- Franja verde fina a la izquierda = mision apropiada para el nivel
+    -- actual del personaje (2026-09-22, ver QuestTags.IsLevelAppropriate).
+    -- x=0..2, antes del logo de grupo (x=3) y del badge (x=22): no se pisa
+    -- con nada. self.playerLevel se lee una vez por PopulateList; si es nil
+    -- (no se pudo leer el nivel) no se dibuja nada, fila igual que antes.
+    if _G.QuestTags and QuestTags.IsLevelAppropriate(quest, self.playerLevel) then
+        local levelBar = Turbine.UI.Control()
+        levelBar:SetParent(item)
+        levelBar:SetPosition(0, 4)
+        levelBar:SetSize(3, 50)
+        levelBar:SetBackColor(QuestTags.LevelColor)
+        levelBar:SetMouseVisible(false)
+    end
+
+    -- Misiones de GRUPO (2026-09-22, pedido explicito del usuario -- ver
+    -- Core/GroupQuest.lua): el TEXTO toma el color de grupo (naranja fuego)
+    -- en vez del color de estado, y se agrega el logo de grupo a la
+    -- izquierda. El ESTADO (disponible/activa/completada) se sigue viendo
+    -- igual que siempre en la insignia chica (badge) -- no se pierde ese
+    -- dato, solo cambia quien pinta el texto. Si la mision no es de grupo,
+    -- groupEntry es nil y la fila queda EXACTAMENTE como antes.
+    local groupEntry = _G.GroupQuest and GroupQuest.Get(quest)
+
     local lbl = Turbine.UI.Label()
     lbl:SetParent(item)
     lbl:SetPosition(36, 0)
@@ -1087,13 +1226,27 @@ function QuestSyncWindow:AddQuestListRow(ndx, quest, displayNameOverride)
     lbl:SetFont(LQA.UI.MEMBookStyle.Font.BookAntiqua16)
     lbl:SetMultiline(true)
     lbl:SetText(esName)
-    ApplyReadableStyle(lbl, StateTextColor(state))
+    ApplyReadableStyle(lbl, groupEntry and GroupQuest.Color.Dark or StateTextColor(state))
 
     item.MouseClick = function(sender, args)
         self:SelectQuest(ndx)
     end
     lbl.MouseClick = item.MouseClick
     badge.MouseClick = item.MouseClick
+
+    if groupEntry then
+        -- 16x16 = tamaño REAL del archivo (SetBackground no reescala, ver
+        -- la nota grande de CreateIconButtonAlpha en MEMBookStyle.lua) +
+        -- AlphaBlend para respetar el borde redondo transparente. Centrado
+        -- en la misma altura que el badge (y=16..24 -> centro 20).
+        local groupIcon = Turbine.UI.Control()
+        groupIcon:SetParent(item)
+        groupIcon:SetPosition(3, 12)
+        groupIcon:SetSize(16, 16)
+        groupIcon:SetBlendMode(Turbine.UI.BlendMode.AlphaBlend)
+        groupIcon:SetBackground(GroupQuest.ICON_16)
+        groupIcon.MouseClick = item.MouseClick
+    end
 
     lbl.MouseHover = function()
         QuestInfoTooltip.GetInstance():ShowFor(ndx, quest, esName)
@@ -1132,6 +1285,13 @@ function QuestSyncWindow:PopulateMisionesTab()
     noteArea(self.currentArea)
     table.sort(areaOrder)
 
+    -- Filtro de grupo (ver btnGroupFilter en el Constructor): con el filtro
+    -- prendido solo entran las misiones de GroupQuestDB, y las areas que no
+    -- tienen ninguna se saltan enteras. Con el filtro apagado,
+    -- onlyGroup=false y este bucle es exactamente el de antes.
+    local onlyGroup = self.groupFilterOnly and _G.GroupQuest ~= nil
+    local anyShown = false
+
     for _, area in ipairs(areaOrder) do
         local cArea = string.lower(area)
         local entries = {}
@@ -1139,7 +1299,7 @@ function QuestSyncWindow:PopulateMisionesTab()
         local totalInArea, completedInArea = 0, 0
         for ndx, quest in pairs(QuestDB.quests) do
             local qArea = string.lower(quest.area or "")
-            if qArea ~= "" and qArea == cArea then
+            if qArea ~= "" and qArea == cArea and (not onlyGroup or GroupQuest.IsGroup(quest)) then
                 local esName = GetQuestDisplayName(ndx, quest)
                 table.insert(entries, { ndx = ndx, quest = quest, esName = esName })
                 nameCounts[esName] = (nameCounts[esName] or 0) + 1
@@ -1154,7 +1314,11 @@ function QuestSyncWindow:PopulateMisionesTab()
             self.collapsedAreas[area] = (area ~= self.currentArea)
         end
 
-        local areaOpen = self:AddZoneHeader(area, area, totalInArea, self.collapsedAreas, pct .. "%")
+        local areaOpen = false
+        if not onlyGroup or totalInArea > 0 then
+            anyShown = true
+            areaOpen = self:AddZoneHeader(area, area, totalInArea, self.collapsedAreas, pct .. "%")
+        end
         if areaOpen then
             local nameSeen = {}
             for _, entry in ipairs(entries) do
@@ -1170,10 +1334,17 @@ function QuestSyncWindow:PopulateMisionesTab()
             end
         end
     end
+
+    if onlyGroup then
+        self.lblSearchInfo:SetText(T(anyShown and "group_filter_info" or "group_filter_empty"))
+    end
 end
 
 function QuestSyncWindow:PopulateList()
     self.listBox:ClearItems()
+    -- Nivel del personaje UNA vez por repoblado (ver AddQuestListRow,
+    -- franja verde de "tu nivel"); nil si no se pudo leer -> no marca nada.
+    self.playerLevel = _G.QuestTags and QuestTags.GetPlayerLevel() or nil
     if self.activeTab == "misiones" then
         self:PopulateMisionesTab()
         return
@@ -1310,6 +1481,7 @@ end
 function QuestSyncWindow:UpdateSearchControls()
     local onTab = self.activeTab == "misiones"
     self.searchBox:SetVisible(onTab)
+    self.btnGroupFilter:SetVisible(onTab)
     self.lblSearchInfo:SetVisible(onTab)
     local filtered = self.isolatedNdx ~= nil or self.searchResults ~= nil
     self.btnClearSearch:SetVisible(onTab and filtered)
@@ -1371,14 +1543,22 @@ function QuestSyncWindow:PerformSearch(queryRaw)
 end
 
 function QuestSyncWindow:PopulateSearchResults(list)
+    -- Filtro de grupo (ver btnGroupFilter): con el filtro apagado este
+    -- bucle es exactamente el de antes.
+    local onlyGroup = self.groupFilterOnly and _G.GroupQuest ~= nil
+    local shown = 0
     for _, ndx in ipairs(list) do
         local quest = QuestDB.quests[ndx]
-        if quest then
+        if quest and (not onlyGroup or GroupQuest.IsGroup(quest)) then
             local esName = GetQuestDisplayName(ndx, quest)
             local area = (quest.area and quest.area ~= "" and quest.area) or quest.zone or ""
             local label = (area ~= "") and (esName .. "  [" .. area .. "]") or esName
             self:AddQuestListRow(ndx, quest, label)
+            shown = shown + 1
         end
+    end
+    if onlyGroup then
+        self.lblSearchInfo:SetText(tostring(shown) .. T("group_filter_count"))
     end
 end
 
@@ -1405,6 +1585,9 @@ function QuestSyncWindow:ClearDetailPanel()
     self.selectedNdx = nil
     self.selectedPoi = nil
     self.lblTitle:SetText(T("select_item"))
+    self.lblTitle:SetForeColor(INK)
+    self.groupBanner:SetVisible(false)
+    self.btnLff:SetVisible(false)
     self.lblDesc:SetText("")
     self:ClearMapMarkers()
     self.pointsList:ClearItems()
@@ -1455,6 +1638,34 @@ function QuestSyncWindow:SelectQuest(ndx)
 
     local esName = GetQuestDisplayName(ndx, quest)
     self.lblTitle:SetText(esName)
+
+    -- Mision de GRUPO (ver cartel self.groupBanner en el Constructor):
+    -- titulo en tinta de grupo + cartel con logo, tamaño de grupo y a que
+    -- mazmorra/incursion/zona hay que ir. Si no es de grupo, titulo con la
+    -- tinta de siempre (INK) y cartel oculto -- se resetea SIEMPRE aca,
+    -- porque SelectQuest se llama de nuevo para otra mision sin pasar por
+    -- ClearDetailPanel.
+    local groupEntry = _G.GroupQuest and GroupQuest.Get(quest)
+    if groupEntry then
+        self.lblTitle:SetForeColor(GroupQuest.Color.Ink)
+        self.lblGroupBanner:SetText(GroupQuest.Statement(groupEntry))
+        self.groupBanner:SetVisible(true)
+    else
+        self.lblTitle:SetForeColor(INK)
+        self.groupBanner:SetVisible(false)
+    end
+
+    -- Boton "Buscar grupo": carga el comando de chat de ESTA mision en su
+    -- Quickslot y se muestra; si no es de grupo (o no hay Quickslot), se
+    -- oculta. El Quickslot queda con el comando anterior mientras esta
+    -- oculto -- inofensivo, nadie puede clickear un boton invisible.
+    local lffCmd = groupEntry and self.lffQuickslot and GroupQuest.LffCommand(quest)
+    if lffCmd then
+        self.lffQuickslot:SetShortcut(Turbine.UI.Lotro.Shortcut(Turbine.UI.Lotro.ShortcutType.Alias, lffCmd))
+        self.btnLff:SetVisible(true)
+    else
+        self.btnLff:SetVisible(false)
+    end
 
     local state = QuestStateManager.GetQuestState(ndx)
     local progress = ""
@@ -1626,6 +1837,10 @@ function QuestSyncWindow:SelectPoi(entry, icon)
     self.btnMarkCompleted:SetVisible(false)
     self.btnMarkReset:SetVisible(false)
     self.btnNarrar:SetVisible(false)
+    -- Cartel/tinta/boton de mision de grupo: solo aplican a misiones (SelectQuest).
+    self.groupBanner:SetVisible(false)
+    self.btnLff:SetVisible(false)
+    self.lblTitle:SetForeColor(INK)
 
     local esName = DisplayName(entry)
     self.lblTitle:SetText(esName)

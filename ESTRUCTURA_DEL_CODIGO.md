@@ -27,12 +27,16 @@ LOTRO_Quest_Assistant/
 │   ├── QuestLocResolver.lua          # texto de chat -> ndx (con desambiguación), NormalizeES
 │   ├── QuestStateManager.lua         # única fuente de verdad del estado (activa/completada/rastreada)
 │   ├── LanguageSettings.lua          # toggle ES/EN, persistido, publica LANGUAGE_CHANGED
+│   ├── GroupQuest.lua                # misiones de grupo: color/icono/textos compartidos (ver §7.6)
+│   ├── QuestTags.lua                 # Diaria/Semanal + "apropiada para tu nivel" (ver §7.7)
 │   ├── NavigationParser.lua          # NO usado (ver §8)
 │   ├── QuestManager.lua              # NO usado (legacy, ver §8)
 │   └── QuestResolver.lua             # NO usado (legacy, ver §8)
 ├── Data/
 │   ├── QuestDatabase.lua             # loader maestro: importa los 10 bloques de abajo
 │   ├── QuestDatabase_001..010.lua    # catálogo de las 14.824 misiones (id, ndx, area, zone, nivel, prev/next...)
+│   ├── GroupQuestDB.lua              # id -> tamaño de grupo oficial + mazmorra/raid/zona (1.448 misiones, ver §7.6)
+│   ├── QuestLockDB.lua               # id -> Diaria/Semanal/Quincenal oficial (2.093 misiones, ver §7.7)
 │   ├── QuestNameIndex.lua            # nombre EN (minúscula) -> ndx
 │   ├── QuestZoneIndex.lua            # índice por zona (EN)
 │   ├── QuestNameESIndex_Full.lua     # nombre ES -> lista de ndx candidatos (base completa, 14.824)
@@ -224,6 +228,23 @@ Ventana flotante (patrón portado de `DeedTracker/DeedTooltipWindow.lua`). Muest
 
 ### 7.5 Paleta de colores — alineada con DeedTracker a propósito
 `StateColor()` en `QuestSyncWindow.lua`: `Beige` (disponible, antes gris plano), `LightBlue` (activa, antes azul RGB a mano), `(0,1,0)` (completada, antes verde RGB a mano) — igualada el 2026-08-20 a los colores reales que usa `DeedTracker/MainWin.lua` (`deedForeColor`/`LightBlue`/`(0,1,0)`), a pedido explícito del usuario de unificar el formato visual entre los dos addons del mismo autor. Encabezados de sección: `Turbine.UI.Color.Yellow` (antes un dorado apagado a mano), mismo criterio.
+
+### 7.6 Misiones de GRUPO (mazmorras / incursiones / instancias) — 2026-09-22
+Pedido explícito del usuario: color específico + logo de grupo + "a qué mazmorra/raid hay que ir" en todas las misiones de grupo.
+- **`Data/GroupQuestDB.lua`** (generado): `id` real de la misión (hex, `QuestDB.quests[ndx].id`) → `{ s, k, p }`. `s` = tamaño OFICIAL del juego (`S` grupo pequeño 3 / `F` comunidad 6 / `R` incursión 12+), sacado de `lore/quests.xml` de LotroCompanion/lotro-data (atributo `size`), cruzado por id contra las 14.974 misiones (14.974/14.974 cruzadas, **1.448 de grupo**). `k` = tipo de lugar (`inst` mazmorra/incursión, `pe` instancia privada, `skirm` escaramuza, `epic` batalla épica, `open` zona abierta). `p` = lugar: nombre real de la instancia (`lore/instancesTree.xml` + dungeons/privateEncounters) o, si no es instancia, área/zona de la propia QuestDB. Nombres de lugar en inglés a propósito (nombre propio oficial, regla §11). Clave por `id` y no por `ndx` para no desalinearse si se regeneran los bloques.
+- **`Core/GroupQuest.lua`**: único punto de consulta — `Get/IsGroup/SizeText/PlaceText/Statement/OneLine`, `Color.Dark` (texto claro con contorno, fondos oscuros) / `Color.Ink` (pergamino), `ICON_16`/`ICON_24`. Cambiar el color de grupo = tocar solo `GroupQuest.Color`. Si `GroupQuestDB` no carga, `Get()` devuelve nil y todas las ventanas quedan exactamente como antes.
+- **Íconos** `Resources/Book/group_icon_16.tga` / `group_icon_24.tga`: generados al tamaño EXACTO de uso (SetBackground no reescala), TGA tipo 10 (RLE) 32bpp como el resto de los .tga del addon, alfa premultiplicado al achicar, siempre con `BlendMode.AlphaBlend`.
+- Dónde se ve: lista de `QuestSyncWindow` (texto naranja + logo 16px; el ESTADO sigue en la insignia chica), panel de detalle (`self.groupBanner` en el hueco libre y=352..422 entre "Objetivo de la Misión" y MoorMap/Waypoint, solo en `SelectQuest`; `SelectPoi`/`ClearDetailPanel` lo ocultan), Tracker (`ClassifyQuest` consulta `GroupQuest` ANTES que "epic"; logo en vez del punto), libro de misión (logo junto al título + primera fila del checklist con el enunciado) y tooltip (título naranja + línea de grupo).
+- Probado con un arnés de simulación del SDK que carga `Main.lua` real completo: versión original y modificada, 0 errores; las 1.448 misiones de grupo pasan por `SelectQuest`/`QuestBookWindow:ShowFor`/tooltip sin errores y con cartel correcto; misión normal después de una de grupo resetea todo.
+- **Atención deploy**: este cambio se hizo directo en `Plugins/` (la carpeta de desarrollo con `tools/QuestSync/deploy.py` no estaba conectada a la sesión). Antes del próximo `deploy.py`, copiar estos archivos a la carpeta de desarrollo o el deploy los va a pisar: `Core/GroupQuest.lua`, `Data/GroupQuestDB.lua`, `Resources/Book/group_icon_16.tga`, `Resources/Book/group_icon_24.tga`, `Main.lua`, `UI/QuestSyncWindow.lua`, `UI/QuestTrackerHUD.lua`, `UI/QuestBookWindow.lua`, `UI/QuestInfoTooltip.lua`, este `.md`.
+
+### 7.7 Ronda 2 (2026-09-22): filtro de grupo, "Buscar grupo", Diaria/Semanal, tu nivel
+- **Filtro de grupo** (`btnGroupFilter`, `QuestSyncWindow`): botón nativo chico en la fila del buscador (el buscador bajó de 140 a 94px de ancho, "Ver todas" no se movió). Apagado por defecto = lista idéntica a antes. Prendido: `PopulateMisionesTab`/`PopulateSearchResults` solo listan misiones de `GroupQuestDB` y `lblSearchInfo` lo avisa.
+- **Botón "Buscar grupo"** (`btnLff`): misma fila y mismo mecanismo que MoorMap/Waypoint (§6.1: `Turbine.UI.Lotro.Button` + Quickslot con Alias). Solo visible en misiones de grupo. Comando: `GroupQuest.LffCommand` → `/world LFF <lugar> (<tamaño>) - Quest: <nombre EN>`, plegado a ASCII (`GroupQuest.FoldAscii`, el parser de comandos no es UTF-8-seguro, mismo bug documentado en `MoorMapAdapter`). Canal en UNA constante: `GroupQuest.LFF_CHANNEL` (las notas oficiales de la Update 19.3 recomiendan `/lff` para buscar grupo; el usuario pidió `/world`). El mensaje sale SOLO al hacer click.
+- **Diaria/Semanal/Quincenal**: `Data/QuestLockDB.lua` (generado del atributo oficial `lockType` de lotro-data, 2.093 misiones: 1.897 D, 165 W, 31 B) + `Core/QuestTags.lua`. Se agrega " · Diaria" en la fila de la lista (salvo que el nombre ya lo diga) y una línea en el tooltip.
+- **Tu nivel**: `QuestTags.GetPlayerLevel()` (`Turbine.Gameplay.LocalPlayer.GetInstance():GetLevel()` en pcall, `import "Turbine.Gameplay"` confirmado en LUI y en `Core/QuestManager.lua`). Franja verde de 3px a la izquierda de la fila y línea en el tooltip si el nivel numérico de la misión está entre nivel-4 y nivel+2 (`QuestTags.LEVEL_BELOW/ABOVE`). Misiones "Scaling" no se marcan. Se lee una vez por `PopulateList`.
+- Probado con el mismo arnés: original y modificado 0 errores; filtro (38 de 98 filas en un área, todas de grupo), búsqueda filtrada, 1.448 comandos LFF válidos (ASCII, ≤ 207 caracteres), etiquetas y nivel (mock nivel 50), textos en EN.
+- **Atención deploy** (igual que §7.6): además copiar `Core/QuestTags.lua` y `Data/QuestLockDB.lua` a la carpeta de desarrollo.
 
 ## 8. Código NO usado (no tocar sin pedirlo explícitamente)
 

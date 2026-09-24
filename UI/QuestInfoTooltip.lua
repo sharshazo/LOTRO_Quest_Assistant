@@ -202,6 +202,28 @@ local function BuildQuestBody(ndx, quest)
     if area then infoLine = infoLine .. "  -  " .. tostring(area) end
     table.insert(lines, infoLine)
 
+    -- Mision de GRUPO (2026-09-22, ver Core/GroupQuest.lua): tamaño de
+    -- grupo + a que mazmorra/incursion/zona hay que ir, justo debajo de
+    -- la linea de nivel. El alto del cuerpo ya se mide solo
+    -- (AutoFitLabelHeight), 2 lineas mas no desbordan nada.
+    local groupEntry = _G.GroupQuest and GroupQuest.Get(quest)
+    if groupEntry then
+        table.insert(lines, GroupQuest.Statement(groupEntry))
+    end
+
+    -- Diaria/Semanal y "apropiada para tu nivel" (2026-09-22, ver
+    -- Core/QuestTags.lua). Cada linea solo aparece si aplica.
+    if _G.QuestTags then
+        local lockText = QuestTags.LockText(quest)
+        if lockText then
+            table.insert(lines, lockText)
+        end
+        local playerLevel = QuestTags.GetPlayerLevel()
+        if QuestTags.IsLevelAppropriate(quest, playerLevel) then
+            table.insert(lines, QuestTags.LevelText(playerLevel))
+        end
+    end
+
     local clean = QuestLocResolver.GetCleanObjectiveLines(ndx, quest, 2)
     if clean[1] then
         table.insert(lines, "")
@@ -262,6 +284,14 @@ function QuestInfoTooltip:ShowFor(ndx, quest, displayName)
     if not quest then return end
     self.currentNdx = ndx
     self.lblTitle:SetText(displayName or quest.nameEN or "")
+    -- Titulo en color de grupo si corresponde; si no, el dorado de siempre
+    -- (se resetea en cada ShowFor -- la instancia del tooltip es unica y se
+    -- reusa entre misiones).
+    if _G.GroupQuest and GroupQuest.IsGroup(quest) then
+        self.lblTitle:SetForeColor(GroupQuest.Color.Dark)
+    else
+        self.lblTitle:SetForeColor(Turbine.UI.Color(1, 0.82, 0.3))
+    end
     self.lblBody:SetText(BuildQuestBody(ndx, quest))
 
     local innerW = WIDTH - BORDER * 2

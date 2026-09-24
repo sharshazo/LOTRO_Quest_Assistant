@@ -9,6 +9,15 @@ import "LOTRO_Quest_Assistant.Core.EventBus"
 
 -- 2. Load Data Indices (Auto-Generated)
 import "LOTRO_Quest_Assistant.Data.QuestDatabase"
+-- GroupQuestDB.lua (2026-09-22, pedido explicito del usuario: color +
+-- logo de grupo + "a que mazmorra/raid hay que ir" en las misiones de
+-- grupo). Tabla pura de datos (id real de la mision -> tamaño/tipo/lugar),
+-- sin dependencias -- ver la nota grande en ese archivo y en
+-- Core/GroupQuest.lua.
+import "LOTRO_Quest_Assistant.Data.GroupQuestDB"
+-- QuestLockDB.lua (2026-09-22): diaria/semanal/quincenal oficial por id
+-- real de mision (tabla pura de datos, ver ese archivo y Core/QuestTags.lua).
+import "LOTRO_Quest_Assistant.Data.QuestLockDB"
 import "LOTRO_Quest_Assistant.Data.QuestZoneIndex"
 import "LOTRO_Quest_Assistant.Data.QuestNameIndex"
 -- QuestLocES.lua (viejo, basado en el TSV) NO se importa: su texto en
@@ -111,6 +120,13 @@ import "LOTRO_Quest_Assistant.Core.NarratorMute"
 import "LOTRO_Quest_Assistant.Core.QuestStateManager"
 import "LOTRO_Quest_Assistant.Core.QuestEventParser"
 import "LOTRO_Quest_Assistant.Core.LanguageSettings"
+-- Helper de misiones de grupo (color/icono/textos compartidos por las 4
+-- ventanas) -- necesita GroupQuestDB (cargado arriba) y LanguageSettings
+-- (justo arriba); tiene que estar ANTES de la UI (paso 5).
+import "LOTRO_Quest_Assistant.Core.GroupQuest"
+-- Etiquetas Diaria/Semanal + "apropiada para tu nivel" (necesita
+-- QuestLockDB y LanguageSettings, ambos arriba).
+import "LOTRO_Quest_Assistant.Core.QuestTags"
 
 import "LOTRO_Quest_Assistant.Core.MoorMapZoneResolver"
 import "LOTRO_Quest_Assistant.Persistence.GatherPointsStore"
