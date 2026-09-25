@@ -18,6 +18,11 @@ import "LOTRO_Quest_Assistant.Data.GroupQuestDB"
 -- QuestLockDB.lua (2026-09-22): diaria/semanal/quincenal oficial por id
 -- real de mision (tabla pura de datos, ver ese archivo y Core/QuestTags.lua).
 import "LOTRO_Quest_Assistant.Data.QuestLockDB"
+-- DeedQuestCollisions.lua (2026-09-25, generado): textos de hazanas que
+-- coinciden con nombres/objetivos de misiones -- ver la nota de ese archivo
+-- y IsDeedCollision en Core/QuestEventParser.lua. Si la tabla faltara
+-- (nil), el parser funciona igual que antes.
+import "LOTRO_Quest_Assistant.Data.DeedQuestCollisions"
 import "LOTRO_Quest_Assistant.Data.QuestZoneIndex"
 import "LOTRO_Quest_Assistant.Data.QuestNameIndex"
 -- QuestLocES.lua (viejo, basado en el TSV) NO se importa: su texto en

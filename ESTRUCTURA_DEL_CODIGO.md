@@ -246,6 +246,14 @@ Pedido explícito del usuario: color específico + logo de grupo + "a qué mazmo
 - Probado con el mismo arnés: original y modificado 0 errores; filtro (38 de 98 filas en un área, todas de grupo), búsqueda filtrada, 1.448 comandos LFF válidos (ASCII, ≤ 207 caracteres), etiquetas y nivel (mock nivel 50), textos en EN.
 - **Atención deploy** (igual que §7.6): además copiar `Core/QuestTags.lua` y `Data/QuestLockDB.lua` a la carpeta de desarrollo.
 
+### 7.8 Verificacion del sistema de deteccion de misiones (2026-09-25)
+Prueba automatica con el arnes (carga Main.lua real) sobre las 14.974 misiones, las 4.673 hazanas de Deed Tracker (EN y ES, nombres y objetivos) y mensajes de chat comunes. Se encontraron y corrigieron 4 problemas:
+- **Nombres con punto** ("01. The Further Adventures...", "...and the Body Will Die"): el parser borraba TODOS los puntos antes de buscar, asi que 438 misiones nunca se detectaban. Ahora `Resolve()` prueba el texto tal cual, sin punto final, y recien despues sin puntos.
+- **Hazanas tomadas como misiones**: LOTRO dice "Completed:" tanto para misiones como para hazanas. 258 nombres de hazana (EN) marcaban completada (y abrian el libro de) una mision que el jugador no tenia; 38 objetivos de hazana activaban misiones. Arreglo: ACEPTADA/COMPLETADA/ABANDONADA resuelven solo por NOMBRE (`QuestLocResolver.FindQuestByName`, nunca por texto de objetivo) y `Data/DeedQuestCollisions.lua` (generado, 379 textos) hace que esos textos solo toquen una mision si ya esta ACTIVA.
+- **Homonimas**: de dos misiones con el mismo nombre se activaba/completaba una "al azar" segun el indice (544 al aceptar, 571 al completar, equivocadas). Ahora son ambiguas de verdad: al completar/abandonar gana la unica activa; al aceptar se descartan la ya activa y la completada no repetible (`PickNewQuest`); si aun quedan varias no se activa ninguna. Se probo elegir por zona y se descarto (elegia mal al cambiar de zona).
+- **Nombre suelto en el chat**: el indice de objetivos trae el nombre de muchas misiones, asi que un nombre suelto activaba la mision (2.158). Ahora `IsQuestOwnName` lo impide, como ya decia la nota del fallback.
+Resultado: 0 misiones equivocadas en todas las pruebas; aceptar 13.667, completar 14.974/14.974, progreso OK; `FindQuestByAnyName` devuelve exactamente lo mismo que antes (177.365 textos comparados). Limite conocido: una mision cuyo nombre es igual al de una hazana, completada sin estar marcada activa, ya no se marca sola.
+
 ## 8. Código NO usado (no tocar sin pedirlo explícitamente)
 
 `Core/NavigationParser.lua`, `Core/QuestManager.lua`, `Core/QuestResolver.lua`, `Legacy/QuestDatabase.lua`, `Legacy/QuestObjectiveIndex.lua`, `UI/NavigationPanel.lua`, `UI/ChestsWindow.lua` (fusionado dentro de `QuestSyncWindow.lua`), `Data/QuestLocES.lua` (mojibake heredado de una extracción TSV vieja), `Data/FarmingDB.lua` (solo 8/34 entradas con coordenada, la pestaña que lo usaba se sacó). Inofensivos porque `Main.lua` nunca los importa — no asumir que hacen algo.
@@ -271,3 +279,4 @@ Pedido explícito del usuario: color específico + logo de grupo + "a qué mazmo
 - MoorMap y Waypoint se reutilizan vía sus adapters, nunca se reconstruyen.
 - Nunca editar la carpeta `Plugins/` en vivo directamente — siempre desplegar vía `deploy.py`.
 - Antes de "corregir" el sangrado de texto bajo los botones MoorMap/Waypoint otra vez: leer §6.1 completo primero. Ya se investigó a fondo, se intentó una vez, y se revirtió por falta de evidencia — no es terreno nuevo.
+

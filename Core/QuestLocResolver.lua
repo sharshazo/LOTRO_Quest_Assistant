@@ -39,19 +39,25 @@ end
 -- el buscador de QuestSyncWindow.lua use la MISMA normalizacion en vez de
 -- duplicar esta logica -- justo el patron de "la misma logica repetida en 2
 -- lugares" que ya causo el bug de "misi?n" y el de mapID=0 antes.
+-- (2026-09-25) Tabla fuera de la funcion y reemplazos solo si el texto
+-- tiene alguna letra acentuada (todas empiezan con el byte 195): mismo
+-- resultado exacto, pero mucho mas rapido -- ahora se usa tambien para armar
+-- el indice de nombres de FindQuestByName (30.000 nombres de una vez).
+local accentPairs = {
+    {"\195\129", "\195\161"}, -- Á -> á
+    {"\195\137", "\195\169"}, -- É -> é
+    {"\195\141", "\195\173"}, -- Í -> í
+    {"\195\147", "\195\179"}, -- Ó -> ó
+    {"\195\154", "\195\186"}, -- Ú -> ú
+    {"\195\145", "\195\177"}, -- Ñ -> ñ
+    {"\195\156", "\195\188"}, -- Ü -> ü
+}
 local function toLowerES(s)
     local lower_s = string.lower(s)
-    local accentPairs = {
-        {"\195\129", "\195\161"}, -- Á -> á
-        {"\195\137", "\195\169"}, -- É -> é
-        {"\195\141", "\195\173"}, -- Í -> í
-        {"\195\147", "\195\179"}, -- Ó -> ó
-        {"\195\154", "\195\186"}, -- Ú -> ú
-        {"\195\145", "\195\177"}, -- Ñ -> ñ
-        {"\195\156", "\195\188"}, -- Ü -> ü
-    }
-    for _, pair in ipairs(accentPairs) do
-        lower_s = string.gsub(lower_s, pair[1], pair[2])
+    if string.find(lower_s, "\195", 1, true) then
+        for _, pair in ipairs(accentPairs) do
+            lower_s = string.gsub(lower_s, pair[1], pair[2])
+        end
     end
     lower_s = string.gsub(lower_s, "%s+", " ")
     lower_s = string.gsub(lower_s, "^%s*(.-)%s*$", "%1")
@@ -106,45 +112,10 @@ function QuestLocResolver.GetCleanObjectiveLines(ndx, quest, maxLines)
     return lines
 end
 
-function QuestLocResolver.FindQuestByAnyName(nameRaw)
-    if not nameRaw or nameRaw == "" then return "FAIL", nil, "No input" end
-
-    local cleanName = toLowerES(nameRaw)
-
-    -- Priority 1: Exact Match in Spanish / English (QuestNameESIndex mapping)
-    local ndxs = QuestNameESIndex and QuestNameESIndex[cleanName]
-    local resType = "NAME"
-
-    if not ndxs then
-        ndxs = QuestObjectiveESIndex and QuestObjectiveESIndex[cleanName]
-        resType = "OBJECTIVE"
-    end
-
-    if not ndxs then
-        -- Fallback to old english index if needed
-        local ndx = QuestNameIndex and QuestNameIndex[cleanName]
-        if ndx then ndxs = { ndx } end
-    end
-
-    if not ndxs then
-        if LQA.Debug.Enabled then
-            Turbine.Shell.WriteLine("<rgb=#FFFF00>QuestSync DEBUG: Candidates = NONE (" .. tostring(cleanName) .. ")</rgb>")
-        end
-        return "FAIL", nil, "No match"
-    end
-
-    -- Parse ndxs list (stored as "123,456" in string if multiple, or just number if single)
-    local candidates = {}
-    if type(ndxs) == "table" then
-        candidates = ndxs
-    elseif type(ndxs) == "number" then
-        candidates = { ndxs }
-    elseif type(ndxs) == "string" then
-        for n in string.gmatch(ndxs, "%d+") do
-            table.insert(candidates, tonumber(n))
-        end
-    end
-
+-- Desambiguacion comun (2026-09-25): extraida SIN CAMBIOS de
+-- FindQuestByAnyName para que FindQuestByName (mas abajo) use exactamente
+-- la misma logica en vez de duplicarla.
+local function Disambiguate(candidates, resType)
     if #candidates == 1 then
         if LQA.Debug.Enabled then
             Turbine.Shell.WriteLine("<rgb=#FFFF00>QuestSync DEBUG: Runtime QuestID = " .. tostring(candidates[1]) .. "</rgb>")
@@ -227,4 +198,145 @@ function QuestLocResolver.FindQuestByAnyName(nameRaw)
     end
 
     return "AMBIGUA", candidates, resType
+end
+
+function QuestLocResolver.FindQuestByAnyName(nameRaw)
+    if not nameRaw or nameRaw == "" then return "FAIL", nil, "No input" end
+
+    local cleanName = toLowerES(nameRaw)
+
+    -- Priority 1: Exact Match in Spanish / English (QuestNameESIndex mapping)
+    local ndxs = QuestNameESIndex and QuestNameESIndex[cleanName]
+    local resType = "NAME"
+
+    if not ndxs then
+        ndxs = QuestObjectiveESIndex and QuestObjectiveESIndex[cleanName]
+        resType = "OBJECTIVE"
+    end
+
+    if not ndxs then
+        -- Fallback to old english index if needed
+        local ndx = QuestNameIndex and QuestNameIndex[cleanName]
+        if ndx then ndxs = { ndx } end
+    end
+
+    if not ndxs then
+        if LQA.Debug.Enabled then
+            Turbine.Shell.WriteLine("<rgb=#FFFF00>QuestSync DEBUG: Candidates = NONE (" .. tostring(cleanName) .. ")</rgb>")
+        end
+        return "FAIL", nil, "No match"
+    end
+
+    -- Parse ndxs list (stored as "123,456" in string if multiple, or just number if single)
+    local candidates = {}
+    if type(ndxs) == "table" then
+        candidates = ndxs
+    elseif type(ndxs) == "number" then
+        candidates = { ndxs }
+    elseif type(ndxs) == "string" then
+        for n in string.gmatch(ndxs, "%d+") do
+            table.insert(candidates, tonumber(n))
+        end
+    end
+
+    return Disambiguate(candidates, resType)
+end
+
+-- ===================================================================
+-- FindQuestByName (2026-09-25, verificacion del sistema de deteccion):
+-- resuelve SOLO por NOMBRE de mision (ingles o espanol), nunca por texto
+-- de objetivo. Lo usan ACEPTADA/COMPLETADA/ABANDONADA del parser de chat:
+-- despues de "New Quest:"/"Completed:" LOTRO siempre pone un NOMBRE, y
+-- FindQuestByAnyName tambien busca en el indice de OBJETIVOS -- eso hacia
+-- que (1) al completar una HAZANA ("Completed:\n<hazana>") cuyo nombre
+-- coincide con el texto de objetivo de alguna mision, esa mision se
+-- marcara completada (y se abriera su libro) sin tenerla, y (2) de dos
+-- misiones con el MISMO nombre se eligiera una sola "al azar" segun que
+-- indice la tuviera, en vez de tratarlas como ambiguas.
+-- El indice nombre -> lista de misiones se arma una sola vez (la primera
+-- vez que se usa) desde QuestDB y los nombres en espanol, asi todas las
+-- homonimas quedan juntas.
+-- ===================================================================
+local NAME_NDX = nil
+
+local function addName(key, ndx)
+    if not key or key == "" or not ndx then return end
+    local list = NAME_NDX[key]
+    if not list then
+        NAME_NDX[key] = { ndx }
+        return
+    end
+    for _, v in ipairs(list) do
+        if v == ndx then return end
+    end
+    list[#list + 1] = ndx
+end
+
+local function buildNameIndex()
+    NAME_NDX = {}
+    if QuestDB and QuestDB.quests then
+        for ndx, q in pairs(QuestDB.quests) do
+            if q.nameEN then addName(toLowerES(q.nameEN), ndx) end
+            local es = QuestLocResolver.GetQuestNameES(ndx, nil)
+            if es then addName(toLowerES(es), ndx) end
+        end
+    end
+    if QuestNameESIndex then
+        for key, v in pairs(QuestNameESIndex) do
+            if type(v) == "table" then
+                for _, n in ipairs(v) do addName(key, n) end
+            elseif type(v) == "number" then
+                addName(key, v)
+            elseif type(v) == "string" then
+                for n in string.gmatch(v, "%d+") do addName(key, tonumber(n)) end
+            end
+        end
+    end
+end
+
+-- Arma el indice ya (lo llama QuestEventParser al cargar el plugin, para
+-- no hacerlo en el primer mensaje de mision en pleno juego).
+function QuestLocResolver.WarmUpNames()
+    if not NAME_NDX then buildNameIndex() end
+end
+
+-- preferActive=true (COMPLETADA/ABANDONADA): si varias misiones comparten
+-- el nombre y el jugador tiene EXACTAMENTE una de ellas activa, es esa --
+-- se mira ANTES que la cadena "prev", que podria elegir una homonima que
+-- ni siquiera tiene. Para ACEPTADA va en false: la mision nueva todavia no
+-- esta activa (misma razon que la nota grande de Disambiguate).
+function QuestLocResolver.FindQuestByName(nameRaw, preferActive)
+    if not nameRaw or nameRaw == "" then return "FAIL", nil, "No input" end
+    if not NAME_NDX then buildNameIndex() end
+    local list = NAME_NDX[toLowerES(nameRaw)]
+    if not list then return "FAIL", nil, "No match" end
+    local candidates = {}
+    for i = 1, #list do candidates[i] = list[i] end
+    if preferActive and #candidates > 1 and QuestStateManager then
+        local activeMatch, activeCount = nil, 0
+        for _, cndx in ipairs(candidates) do
+            if QuestStateManager.State.active[cndx] then
+                activeMatch = cndx
+                activeCount = activeCount + 1
+            end
+        end
+        if activeCount == 1 then
+            return "SUCCESS", activeMatch, "NAME_ACTIVE"
+        end
+    end
+    return Disambiguate(candidates, "NAME")
+end
+
+-- ¿El texto es el NOMBRE de esa mision (ingles o espanol)? Lo usa el
+-- parser para no activar una mision solo porque su nombre aparecio suelto
+-- en el chat (el indice de objetivos tambien trae el nombre de muchas
+-- misiones como si fuera un objetivo).
+function QuestLocResolver.IsQuestOwnName(ndx, text)
+    local q = QuestDB and QuestDB.quests and QuestDB.quests[ndx]
+    if not q or not text then return false end
+    local t = toLowerES(text)
+    if q.nameEN and toLowerES(q.nameEN) == t then return true end
+    local es = QuestLocResolver.GetQuestNameES(ndx, nil)
+    if es and toLowerES(es) == t then return true end
+    return false
 end

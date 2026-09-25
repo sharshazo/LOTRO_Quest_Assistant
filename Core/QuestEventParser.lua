@@ -45,6 +45,74 @@ local PATTERNS = {
     }
 }
 
+-- (2026-09-25, verificacion del sistema de deteccion) Variantes del texto
+-- a buscar, de la mas fiel a la mas limpia. Antes se borraban TODOS los
+-- puntos antes de buscar, asi que las 438 misiones cuyo nombre lleva un
+-- punto ("01. The Further Adventures...", "...and the Body Will Die",
+-- "Mr. Bolger...") nunca se detectaban al aceptarlas ni al completarlas.
+-- Ahora se prueba el texto tal cual, despues sin el punto final, y recien
+-- al final sin ningun punto (lo que se hacia antes), asi no se pierde nada
+-- de lo que ya funcionaba.
+local function Trim(s)
+    return (string.gsub(s, "^%s*(.-)%s*$", "%1"))
+end
+
+local function Variants(s)
+    local out, seen = {}, {}
+    local function add(v)
+        v = Trim(v)
+        if v ~= "" and not seen[v] then
+            seen[v] = true
+            out[#out + 1] = v
+        end
+    end
+    add(s)
+    add((string.gsub(Trim(s), "%.+$", "")))
+    add((string.gsub(s, "%.", "")))
+    return out
+end
+
+-- Devuelve status, resultado, tipo y el texto (variante) que se uso.
+local function Resolve(finder, text, flag)
+    local variants = Variants(text)
+    for _, v in ipairs(variants) do
+        local status, a, b = finder(v, flag)
+        if status ~= "FAIL" then return status, a, b, v end
+    end
+    return "FAIL", nil, nil, variants[#variants] or ""
+end
+
+-- Textos de HAZANAS (Deed Tracker) que son iguales al nombre o a un
+-- objetivo de alguna mision (Data/DeedQuestCollisions.lua, generado).
+-- LOTRO avisa "Completed:" tanto para misiones como para hazanas, asi que
+-- con estos textos solo se toca una mision si el jugador YA la tiene
+-- activa -- nunca se marca/abre una mision que no tiene por una hazana.
+local function IsDeedCollision(text)
+    local set = _G.DeedQuestCollisions
+    return set ~= nil and set[QuestLocResolver.NormalizeES(text)] == true
+end
+
+-- ACEPTADA con un nombre que comparten varias misiones (571 nombres, 1.307
+-- misiones). En vez de elegir una al azar (lo que pasaba antes con ~544 de
+-- ellas, activando la equivocada), se descartan con datos REALES las que no
+-- pueden ser: la que ya esta activa (no se acepta dos veces) y la que ya se
+-- completo y no es repetible. Si queda UNA sola, es esa. Si quedan
+-- varias no se activa ninguna (se puede marcar a mano): nunca se activa
+-- una mision que no es. (Se probo tambien elegir por la zona donde el
+-- jugador venia haciendo misiones, y se descarto: al llegar a una zona
+-- nueva elegia mal la homonima de la zona anterior.)
+local function PickNewQuest(cands)
+    local S = QuestStateManager.State
+    local open = {}
+    for _, c in ipairs(cands) do
+        local q = QuestDB.quests[c]
+        local doneForGood = S.completed[c] and not (q and q.repeatable == true)
+        if q and not S.active[c] and not doneForGood then open[#open + 1] = c end
+    end
+    if #open == 1 then return open[1] end
+    return nil
+end
+
 function QuestEventParser.ParseMessage(sender, message)
     if not message then return end
     if LQA.Debug.Enabled then
@@ -61,14 +129,13 @@ function QuestEventParser.ParseMessage(sender, message)
                 Turbine.Shell.WriteLine("<rgb=#FFFF00>QuestSync DEBUG: PROGRESS VALUE = " .. cur .. "/" .. max .. "</rgb>")
             end
 
-            local qNameClean = string.gsub(desc, "%.", ""):gsub("^%s*(.-)%s*$", "%1")
-            local status, ndx, res = QuestLocResolver.FindQuestByAnyName(qNameClean)
+            local status, ndx, res, qNameClean = Resolve(QuestLocResolver.FindQuestByAnyName, desc)
 
             if status == "SUCCESS" then
                 local q = QuestDB.quests[ndx]
                 if q then
                     local stateBefore = QuestStateManager.GetQuestState(ndx) or "UNKNOWN"
-                    if stateBefore ~= "ACTIVE" then
+                    if stateBefore ~= "ACTIVE" and not IsDeedCollision(qNameClean) then
                         QuestStateManager.SetQuestActive(ndx)
                     end
                     QuestStateManager.UpdateProgress(ndx, cur .. "/" .. max)
@@ -101,11 +168,18 @@ function QuestEventParser.ParseMessage(sender, message)
     for _, pattern in ipairs(PATTERNS.ACCEPTED) do
         local qName = string.match(message, pattern)
         if qName then
-            local qNameClean = string.gsub(qName, "%.", ""):gsub("^%s*(.-)%s*$", "%1")
-            local status, ndx, res = QuestLocResolver.FindQuestByAnyName(qNameClean)
+            -- Solo por NOMBRE (ver QuestLocResolver.FindQuestByName).
+            local status, ndx, res, qNameClean = Resolve(QuestLocResolver.FindQuestByName, qName, false)
             if status == "SUCCESS" then
                 QuestStateManager.SetQuestActive(ndx)
                 return true
+            end
+            if status == "AMBIGUA" and type(ndx) == "table" then
+                local pick = PickNewQuest(ndx)
+                if pick then
+                    QuestStateManager.SetQuestActive(pick)
+                    return true
+                end
             end
             if LQA.Debug.Enabled then
                 Turbine.Shell.WriteLine("<rgb=#FF0000>QuestSync DEBUG: QUEST NAME RESOLUTION = " ..
@@ -132,9 +206,14 @@ function QuestEventParser.ParseMessage(sender, message)
     for _, pattern in ipairs(PATTERNS.COMPLETED) do
         local qName = string.match(message, pattern)
         if qName then
-            local qNameClean = string.gsub(qName, "%.", ""):gsub("^%s*(.-)%s*$", "%1")
-            local status, result = QuestLocResolver.FindQuestByAnyName(qNameClean)
+            -- Solo por NOMBRE; si hay homonimas, primero la que esta activa.
+            local status, result, res, qNameClean = Resolve(QuestLocResolver.FindQuestByName, qName, true)
             if status == "SUCCESS" then
+                -- Hazana con el mismo nombre que una mision que el jugador
+                -- NO tiene activa: es la hazana, no la mision.
+                if not QuestStateManager.State.active[result] and IsDeedCollision(qNameClean) then
+                    return false
+                end
                 QuestStateManager.SetQuestCompleted(result)
                 return true
             elseif status == "AMBIGUA" then
@@ -158,8 +237,7 @@ function QuestEventParser.ParseMessage(sender, message)
     for _, pattern in ipairs(PATTERNS.ABANDONED) do
         local qName = string.match(message, pattern)
         if qName then
-            local qNameClean = string.gsub(qName, "%.", ""):gsub("^%s*(.-)%s*$", "%1")
-            local status, result = QuestLocResolver.FindQuestByAnyName(qNameClean)
+            local status, result, res, qNameClean = Resolve(QuestLocResolver.FindQuestByName, qName, true)
             if status == "SUCCESS" then
                 QuestStateManager.SetQuestAbandoned(result)
                 return true
@@ -185,8 +263,7 @@ function QuestEventParser.ParseMessage(sender, message)
     -- Si coincide exactamente con un nombre u objetivo conocido, reafirmamos
     -- el estado ACTIVE y forzamos un refresco de la UI, aunque no cambie el
     -- contador N/M.
-    local qNameClean = string.gsub(message, "%.", ""):gsub("^%s*(.-)%s*$", "%1")
-    local status, ndx, res = QuestLocResolver.FindQuestByAnyName(qNameClean)
+    local status, ndx, res, qNameClean = Resolve(QuestLocResolver.FindQuestByAnyName, message)
     if status == "SUCCESS" then
         local stateBefore = QuestStateManager.GetQuestState(ndx)
         if stateBefore ~= "ACTIVE" and stateBefore ~= "COMPLETED" then
@@ -195,7 +272,14 @@ function QuestEventParser.ParseMessage(sender, message)
             -- mision en dialogo normal sin que el jugador la haya aceptado
             -- (falso positivo), pero un texto de objetivo exacto es mucho mas
             -- especifico y casi nunca aparece fuera de contexto.
-            if res == "OBJECTIVE" or res == "OBJECTIVE_CHAIN" then
+            -- (2026-09-25) El indice de objetivos tambien trae el NOMBRE de
+            -- muchas misiones como si fuera un objetivo, asi que un nombre
+            -- suelto en el chat activaba la mision igual (2.158 misiones).
+            -- Ahora se exige que el texto NO sea el nombre de esa mision ni
+            -- el texto de una hazana.
+            if (res == "OBJECTIVE" or res == "OBJECTIVE_CHAIN")
+                and not QuestLocResolver.IsQuestOwnName(ndx, qNameClean)
+                and not IsDeedCollision(qNameClean) then
                 QuestStateManager.SetQuestActive(ndx)
             end
         else
@@ -207,5 +291,8 @@ function QuestEventParser.ParseMessage(sender, message)
     return false
 end
 
-
-
+-- (2026-09-25) Indice de nombres de misiones armado durante la CARGA del
+-- plugin (~0,2 s) y no con el primer mensaje de mision en pleno juego.
+if QuestLocResolver and QuestLocResolver.WarmUpNames then
+    pcall(QuestLocResolver.WarmUpNames)
+end
